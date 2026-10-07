@@ -467,6 +467,42 @@ pages:
   memory:
     description: 存放记忆的地方，以及策略
     title: 记忆体
+    service-url: 记忆服务地址
+    service-url-description: airi-memory 服务的 HTTP 地址
+    check-connection: 检查连接
+    connection-connected: 已连接到记忆服务
+    connection-unreachable: 无法连接记忆服务
+    connection-unknown: 尚未检查连接
+    enable: 启用记忆
+    enable-description: 每次回复前检索相关记忆
+    auto-extract: 自动提取记忆
+    auto-extract-description: 每轮回复后，用对话模型把值得记住的事实存入记忆
+    embedding-title: 嵌入 API
+    embedding-description: 会发送给 airi-memory 服务，用于把记忆向量化以便检索
+    embedding-missing-fields: Base URL 和模型为必填项
+    embedding-saved: 嵌入设置已保存到记忆服务
+    base-url: Base URL
+    base-url-description: OpenAI 兼容 API 根地址，例如 https://api.openai.com/v1
+    api-key: API 密钥
+    model: 模型
+    model-description: 嵌入模型名称，例如 text-embedding-3-small
+    save-embedding: 保存嵌入设置
+    add-title: 手动添加记忆
+    add-placeholder: 一条偏好、事实或值得记住的事件
+    add: 添加记忆
+    memory-added: 记忆已添加
+    memory-duplicate: 已存在相同记忆，旧记忆得到强化
+    memory-deleted: 记忆已删除
+    memories-cleared: 已清空全部记忆
+    list-title: 记忆列表
+    list-empty: 还没有记忆
+    search-placeholder: 过滤记忆
+    refresh: 刷新
+    kind-short: 短期
+    kind-long: 长期
+    half-life: '半衰期：{days} 天'
+    recall-count: '已召回 {count} 次'
+    delete: 删除
   data:
     description: 管理存储 AIRI 数据、导出和重置
     sections:
@@ -757,9 +793,11 @@ pages:
     memory-long-term:
       description: 长期记忆
       title: 长期记忆
+      view-description: 长期记忆衰减慢。它们由短期记忆经反复召回强化而来
     memory-short-term:
       description: 短期记忆
       title: 短期记忆
+      view-description: 短期记忆衰减快。经常被召回的记忆半衰期会变长，逐渐演化为长期记忆
     messaging-discord:
       description: Discord 发消息和语音聊天
       enable: 启用Discord集成

@@ -497,6 +497,42 @@ pages:
   memory:
     description: Where memories got stored, and organized
     title: Memory
+    service-url: Memory service URL
+    service-url-description: HTTP address of the airi-memory service
+    check-connection: Check connection
+    connection-connected: Connected to the memory service
+    connection-unreachable: Cannot reach the memory service
+    connection-unknown: Connection not checked
+    enable: Enable memory
+    enable-description: Retrieve memories before each reply
+    auto-extract: Auto-extract memories
+    auto-extract-description: After each reply, save lasting facts with the chat model
+    embedding-title: Embedding API
+    embedding-description: Sent to the airi-memory service. It embeds memories for retrieval
+    embedding-missing-fields: Base URL and model are required
+    embedding-saved: Embedding settings saved to the memory service
+    base-url: Base URL
+    base-url-description: OpenAI-compatible API root, for example https://api.openai.com/v1
+    api-key: API key
+    model: Model
+    model-description: Embedding model name, for example text-embedding-3-small
+    save-embedding: Save embedding settings
+    add-title: Add a memory
+    add-placeholder: A preference, a fact, or an event worth remembering
+    add: Add memory
+    memory-added: Memory added
+    memory-duplicate: Already stored. The existing memory was reinforced
+    memory-deleted: Memory deleted
+    memories-cleared: All memories cleared
+    list-title: Memories
+    list-empty: No memories yet
+    search-placeholder: Filter memories
+    refresh: Refresh
+    kind-short: Short-term
+    kind-long: Long-term
+    half-life: 'Half-life: {days}d'
+    recall-count: 'Recalled {count}×'
+    delete: Delete
   data:
     title: Data
     description: Manage stored AIRI data, exports, and resets
@@ -805,9 +841,11 @@ pages:
     memory-long-term:
       description: Long-term memory specific settings and management
       title: Long-Term Memory
+      view-description: Long-term memories decay slowly. They started as short-term memories and grew through recall
     memory-short-term:
       description: Short-term memory specific settings and management
       title: Short-Term Memory
+      view-description: Short-term memories decay fast. Memories recalled often gain a longer half-life and slowly become long-term
     messaging-discord:
       description: Chat & voice chat over Discord
       title: Discord

@@ -32,7 +32,7 @@ import { resolveLlmTools } from './ai/chat-llm/tool-resolver'
 import { useLlmToolsStore } from './ai/chat-llm/tools'
 import { useLlmToolsetPromptsStore } from './ai/chat-llm/toolset-prompts'
 import { useAuthStore } from './auth'
-import { createMinecraftContext, createRuntimePromptContext, createUserAccountContext } from './chat/context-providers'
+import { createMemoryContext, createMinecraftContext, createRuntimePromptContext, createUserAccountContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
 import { describeChatImages, replaceToolResultImages } from './chat/image-projection'
 import { useChatSessionStore } from './chat/session-store'
@@ -41,6 +41,7 @@ import { useContextObservabilityStore } from './devtools/context-observability'
 import { useAiriCardStore } from './modules/airi-card'
 import { useAutonomousArtistryStore } from './modules/artistry-autonomous'
 import { useConsciousnessStore } from './modules/consciousness'
+import { useMemoryStore } from './modules/memory'
 import { useStickersStore } from './modules/stickers'
 import { useVisionStore } from './modules/vision'
 import { useWebSearchStore } from './modules/web-search'
@@ -199,6 +200,7 @@ export const useChatStore = defineStore('chat', () => {
   const chatContext = useChatContextStore()
   const cardStore = useAiriCardStore()
   const stickersStore = useStickersStore()
+  const memoryStore = useMemoryStore()
   const contextObservability = useContextObservabilityStore()
   const { activeSessionId } = storeToRefs(chatSession)
   const { streamingMessage } = storeToRefs(chatStream)
@@ -455,6 +457,12 @@ export const useChatStore = defineStore('chat', () => {
         const account = createUserAccountContext(authStore)
         if (account)
           snapshot[account.contextId] = [account]
+        // Memories are retrieved per request during send preparation and read here
+        // synchronously, exactly like the account context. They must not persist in
+        // the registry, or a stale memory list would ride along on later requests.
+        const memories = createMemoryContext(memoryStore.retrievedMemories)
+        if (memories)
+          snapshot[memories.contextId] = [memories]
         return snapshot
       },
     },
@@ -518,10 +526,15 @@ export const useChatStore = defineStore('chat', () => {
       if (autonomousTarget === 'user')
         void artistryAutonomousStore.runArtistTask(messageText, toProviderHistory(sessionMessages))
     },
-    onAssistantTurnReady: ({ messageText, sessionMessages }) => {
+    onAssistantTurnReady: ({ sessionId, messageText, sessionMessages }) => {
       const artistry = cardStore.activeCard?.extensions?.airi?.modules?.artistry
       if (artistry?.autonomousEnabled && artistry?.autonomousTarget === 'assistant')
         void artistryAutonomousStore.runArtistTask(messageText, toProviderHistory(sessionMessages))
+      // Fire-and-forget: memory extraction must never delay or fail the reply path.
+      const sourceMessage = [...sessionMessages].reverse().find(message => message.role === 'user')
+      const userText = sourceMessage ? extractMessageText(sourceMessage) : ''
+      if (userText && messageText)
+        void memoryStore.extractFromTurn(userText, messageText, sessionId)
     },
   })
 
@@ -556,6 +569,8 @@ export const useChatStore = defineStore('chat', () => {
     const prepared = (async () => {
       captured.signal.throwIfAborted()
       const stickers = captured.stickers ?? await stickersStore.selectCatalogForReply()
+      captured.signal.throwIfAborted()
+      await memoryStore.retrieveForQuery(sendingMessage)
       captured.signal.throwIfAborted()
       if (chatSession.getSessionGeneration(sessionId) !== generation)
         throw new DOMException('Chat session changed during preparation', 'AbortError')
@@ -621,6 +636,9 @@ export const useChatStore = defineStore('chat', () => {
       throw new Error('No active chat provider or model configured')
 
     const stickers = await stickersStore.selectCatalogForReply()
+    signal.throwIfAborted()
+
+    await memoryStore.retrieveForQuery(payload.text)
     signal.throwIfAborted()
 
     const chatProvider = await consciousnessStore.getChatProviderInstance(providerId)
