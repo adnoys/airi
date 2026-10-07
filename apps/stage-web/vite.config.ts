@@ -22,6 +22,7 @@ import { localeRemap, serializeStartupFallbackLocales } from '@proj-airi/i18n'
 import { paraformerBilingualZhEn, xAsrBilingualZhEnInt8, zipformerMultilingual } from '@proj-airi/provider-inference/sherpaw-transcription/models'
 import { Download } from '@proj-airi/unplugin-fetch/vite'
 import { DownloadLive2DSDK } from '@proj-airi/unplugin-live2d-sdk/vite'
+import { MemorySidecar } from '@proj-airi/vite-plugin-memory-sidecar'
 import { Sherpaw } from '@proj-airi/vite-plugin-sherpaw'
 import { LFS, SpaceCard } from 'hfup/vite'
 import { defineConfig } from 'vite'
@@ -252,6 +253,9 @@ export default defineConfig({
 
     // Web exposes pinned remote models. The browser downloads only the selected model.
     Sherpaw({ models: [paraformerBilingualZhEn, zipformerMultilingual, xAsrBilingualZhEnInt8], cacheDir: sharedCacheDir }),
+    // Keep airi-memory on :6430 while this app is open. The in-app toggle stays
+    // the per-origin switch that decides whether chat talks to the service.
+    MemorySidecar({ cwd: resolve(import.meta.dirname, '..', '..', 'airi-memory') }),
     DownloadLive2DSDK(),
     Download('https://dist.ayaka.moe/live2d-models/hiyori_free_zh.zip', 'hiyori_free_zh.zip', 'live2d/models', { parentDir: stageUIAssetsRoot, cacheDir: sharedCacheDir }),
     Download('https://dist.ayaka.moe/live2d-models/hiyori_pro_zh.zip', 'hiyori_pro_zh.zip', 'live2d/models', { parentDir: stageUIAssetsRoot, cacheDir: sharedCacheDir }),

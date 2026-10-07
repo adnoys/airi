@@ -110,6 +110,16 @@ class MemoryStore:
                 best_similarity = similarity
         return best
 
+    def find_duplicate_text(self, content: str) -> dict | None:
+        """Exact-text duplicate lookup for retrieval modes without vectors."""
+        folded = scoring.normalize_text(content)
+        if not folded:
+            return None
+        for entry in self._entries:
+            if scoring.normalize_text(str(entry.get('content', ''))) == folded:
+                return entry
+        return None
+
     def update_raw(self, entry_id: str, transform) -> dict | None:
         """Apply ``transform`` to the raw entry in place and persist."""
         with self._lock:

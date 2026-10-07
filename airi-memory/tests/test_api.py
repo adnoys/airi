@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from airi_memory.config import EmbeddingConfig, ServiceConfig
+from airi_memory.config import EmbeddingConfig, LLMConfig, ServiceConfig
 from airi_memory.server import create_app
 from airi_memory.store import MemoryStore
 
@@ -136,6 +136,84 @@ class TestMemories:
         add_memory(client, 'Two')
         assert client.delete('/v1/memories').json()['deleted'] == 2
         assert client.get('/v1/memories').json()['entries'] == []
+
+
+class FakeReranker:
+    """Keeps candidates whose content contains the whole query, in order."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    async def rerank(self, query: str, candidates: list[str], top_k: int) -> list[int]:
+        self.calls.append((query, candidates))
+        return [index for index, text in enumerate(candidates) if query in text][:top_k]
+
+    async def close(self) -> None:
+        pass
+
+
+class TestLLMRetrieval:
+    @pytest.fixture()
+    def reranker(self) -> FakeReranker:
+        return FakeReranker()
+
+    @pytest.fixture()
+    def llm_client(self, tmp_path: Path, reranker: FakeReranker) -> TestClient:
+        config = ServiceConfig(
+            data_dir=tmp_path,
+            retrieval='llm',
+            llm=LLMConfig(base_url='https://api.deepseek.com', model='deepseek-chat'),
+        )
+        app = create_app(config, MemoryStore(tmp_path), llm_factory=lambda _config: reranker)
+        with TestClient(app) as test_client:
+            yield test_client
+
+    def test_health_reports_llm_mode(self, llm_client: TestClient) -> None:
+        body = llm_client.get('/v1/health').json()
+        assert body['retrieval'] == 'llm'
+        assert body['llm_configured'] is True
+        assert body['embedding_configured'] is False
+
+    def test_store_works_without_embeddings(self, llm_client: TestClient) -> None:
+        body = llm_client.post('/v1/memories', json={'content': 'User likes matcha', 'source_session_id': 's1'}).json()
+        assert body['deduplicated'] is False
+        assert body['entry']['half_life_days'] == 7.0
+
+    def test_identical_text_deduplicates_without_vectors(self, llm_client: TestClient) -> None:
+        first = llm_client.post('/v1/memories', json={'content': 'User likes matcha'}).json()['entry']
+        second = llm_client.post('/v1/memories', json={'content': 'user  likes matcha'}).json()
+        assert second['deduplicated'] is True
+        assert second['entry']['id'] == first['id']
+        assert second['entry']['recall_count'] == 1
+
+    def test_search_reranks_through_the_chat_model(self, llm_client: TestClient, reranker: FakeReranker) -> None:
+        llm_client.post('/v1/memories', json={'content': 'User likes matcha'})
+        llm_client.post('/v1/memories', json={'content': 'User owns a cat'})
+        body = llm_client.post('/v1/search', json={'query': 'matcha', 'top_k': 3}).json()
+        assert len(body['results']) == 1
+        assert body['results'][0]['content'] == 'User likes matcha'
+        assert body['results'][0]['recall_count'] == 1
+        assert reranker.calls[0][0] == 'matcha'
+
+    def test_search_without_llm_config_fails(self, tmp_path: Path) -> None:
+        config = ServiceConfig(data_dir=tmp_path, retrieval='llm')
+        app = create_app(config, MemoryStore(tmp_path))
+        with TestClient(app) as test_client:
+            response = test_client.post('/v1/search', json={'query': 'Anything'})
+        assert response.status_code == 503
+        assert 'reranking chat model is not configured' in response.json()['detail']
+
+    def test_put_config_switches_mode(self, tmp_path: Path, reranker: FakeReranker) -> None:
+        app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path), llm_factory=lambda _c: reranker)
+        with TestClient(app) as test_client:
+            body = test_client.put('/v1/config', json={
+                'retrieval': 'llm',
+                'llm': {'base_url': 'https://api.deepseek.com', 'api_key': 'k', 'model': 'deepseek-chat'},
+            }).json()
+            assert body['retrieval'] == 'llm'
+            assert body['backfilled'] == 0
+            health = test_client.get('/v1/health').json()
+            assert health['retrieval'] == 'llm'
 
 
 class TestSearch:

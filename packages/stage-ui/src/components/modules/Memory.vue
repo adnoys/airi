@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { MemoryRetrievalMode } from '../../libs/memory/client'
+
 import { errorMessageFrom } from '@moeru/std'
-import { Button, DoubleCheckButton, FieldCheckbox, FieldInput } from '@proj-airi/ui'
+import { Button, DoubleCheckButton, FieldCheckbox, FieldInput, FieldSelect } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -14,14 +16,25 @@ const { t } = useI18n()
 const memoryStore = useMemoryStore()
 const { serviceUrl, enabled, autoExtract, connection } = storeToRefs(memoryStore)
 
+const listVersion = ref(0)
+
+const retrievalMode = ref<MemoryRetrievalMode>('embedding')
 const embeddingBaseUrl = ref('')
 const embeddingApiKey = ref('')
 const embeddingModel = ref('')
-const isSavingEmbedding = ref(false)
+const llmBaseUrl = ref('')
+const llmApiKey = ref('')
+const llmModel = ref('')
+const isSavingRetrieval = ref(false)
 const isCheckingConnection = ref(false)
 
 const newMemoryContent = ref('')
 const isAddingMemory = ref(false)
+
+const retrievalModeOptions = computed(() => [
+  { label: t('settings.pages.memory.retrieval-embedding'), value: 'embedding' },
+  { label: t('settings.pages.memory.retrieval-llm'), value: 'llm' },
+])
 
 const connectionLabel = computed(() => {
   if (connection.value === 'connected')
@@ -37,7 +50,7 @@ async function checkConnection() {
     const ok = await memoryStore.checkHealth()
     if (ok) {
       toast.success(t('settings.pages.memory.connection-connected'))
-      await prefillEmbeddingConfig()
+      await prefillRetrievalConfig()
     }
     else {
       toast.error(t('settings.pages.memory.connection-unreachable'))
@@ -48,13 +61,19 @@ async function checkConnection() {
   }
 }
 
-async function prefillEmbeddingConfig() {
+async function prefillRetrievalConfig() {
   try {
-    const config = await memoryStore.fetchEmbeddingConfig()
+    const config = await memoryStore.fetchServiceConfig()
+    retrievalMode.value = config.retrieval
     if (config.embedding) {
       embeddingBaseUrl.value = config.embedding.base_url
       embeddingApiKey.value = config.embedding.api_key
       embeddingModel.value = config.embedding.model
+    }
+    if (config.llm) {
+      llmBaseUrl.value = config.llm.base_url
+      llmApiKey.value = config.llm.api_key
+      llmModel.value = config.llm.model
     }
   }
   catch {
@@ -62,17 +81,23 @@ async function prefillEmbeddingConfig() {
   }
 }
 
-async function saveEmbeddingConfig() {
-  if (!embeddingBaseUrl.value.trim() || !embeddingModel.value.trim()) {
+async function saveRetrievalConfig() {
+  const missingFields = (baseUrl: string, model: string) => !baseUrl.trim() || !model.trim()
+  if (retrievalMode.value === 'embedding' && missingFields(embeddingBaseUrl.value, embeddingModel.value)) {
     toast.error(t('settings.pages.memory.embedding-missing-fields'))
     return
   }
-  isSavingEmbedding.value = true
+  if (retrievalMode.value === 'llm' && missingFields(llmBaseUrl.value, llmModel.value)) {
+    toast.error(t('settings.pages.memory.embedding-missing-fields'))
+    return
+  }
+  isSavingRetrieval.value = true
   try {
-    await memoryStore.pushEmbeddingConfig({
-      base_url: embeddingBaseUrl.value.trim(),
-      api_key: embeddingApiKey.value.trim(),
-      model: embeddingModel.value.trim(),
+    await memoryStore.pushRetrievalConfig({
+      retrieval: retrievalMode.value,
+      ...(retrievalMode.value === 'embedding'
+        ? { embedding: { base_url: embeddingBaseUrl.value.trim(), api_key: embeddingApiKey.value.trim(), model: embeddingModel.value.trim() } }
+        : { llm: { base_url: llmBaseUrl.value.trim(), api_key: llmApiKey.value.trim(), model: llmModel.value.trim() } }),
     })
     toast.success(t('settings.pages.memory.embedding-saved'))
   }
@@ -80,7 +105,7 @@ async function saveEmbeddingConfig() {
     toast.error(errorMessageFrom(error) ?? t('settings.pages.memory.connection-unreachable'))
   }
   finally {
-    isSavingEmbedding.value = false
+    isSavingRetrieval.value = false
   }
 }
 
@@ -105,8 +130,10 @@ async function addMemory() {
 async function clearAll() {
   try {
     const count = await memoryStore.clearMemories()
-    if (count > 0)
+    if (count > 0) {
       toast.success(t('settings.pages.memory.memories-cleared'))
+      listVersion.value++
+    }
   }
   catch (error) {
     toast.error(errorMessageFrom(error) ?? t('settings.pages.memory.connection-unreachable'))
@@ -171,27 +198,58 @@ onMounted(async () => {
         {{ t('settings.pages.memory.embedding-description') }}
       </p>
 
-      <FieldInput
-        v-model="embeddingBaseUrl"
-        :label="t('settings.pages.memory.base-url')"
-        :description="t('settings.pages.memory.base-url-description')"
-        placeholder="https://api.openai.com/v1"
+      <FieldSelect
+        v-model="retrievalMode"
+        :options="retrievalModeOptions"
+        :label="t('settings.pages.memory.retrieval-mode')"
+        :description="t('settings.pages.memory.retrieval-mode-description')"
       />
 
-      <FieldInput
-        v-model="embeddingApiKey"
-        type="password"
-        :label="t('settings.pages.memory.api-key')"
-      />
+      <template v-if="retrievalMode === 'embedding'">
+        <FieldInput
+          v-model="embeddingBaseUrl"
+          :label="t('settings.pages.memory.base-url')"
+          :description="t('settings.pages.memory.base-url-description')"
+          placeholder="https://api.openai.com/v1"
+        />
 
-      <FieldInput
-        v-model="embeddingModel"
-        :label="t('settings.pages.memory.model')"
-        :description="t('settings.pages.memory.model-description')"
-        placeholder="text-embedding-3-small"
-      />
+        <FieldInput
+          v-model="embeddingApiKey"
+          type="password"
+          :label="t('settings.pages.memory.api-key')"
+        />
 
-      <Button :disabled="isSavingEmbedding" @click="saveEmbeddingConfig">
+        <FieldInput
+          v-model="embeddingModel"
+          :label="t('settings.pages.memory.model')"
+          :description="t('settings.pages.memory.model-description')"
+          placeholder="text-embedding-3-small"
+        />
+      </template>
+
+      <template v-else>
+        <FieldInput
+          v-model="llmBaseUrl"
+          :label="t('settings.pages.memory.llm-base-url')"
+          :description="t('settings.pages.memory.llm-base-url-description')"
+          placeholder="https://api.deepseek.com"
+        />
+
+        <FieldInput
+          v-model="llmApiKey"
+          type="password"
+          :label="t('settings.pages.memory.api-key')"
+        />
+
+        <FieldInput
+          v-model="llmModel"
+          :label="t('settings.pages.memory.model')"
+          :description="t('settings.pages.memory.llm-model-description')"
+          placeholder="deepseek-chat"
+        />
+      </template>
+
+      <Button :disabled="isSavingRetrieval" @click="saveRetrievalConfig">
         {{ t('settings.pages.memory.save-embedding') }}
       </Button>
     </div>
@@ -214,7 +272,7 @@ onMounted(async () => {
       </Button>
     </div>
 
-    <MemoryList />
+    <MemoryList :key="listVersion" />
 
     <div flex="~ justify-end">
       <DoubleCheckButton @confirm="clearAll">

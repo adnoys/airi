@@ -1,6 +1,6 @@
 import type { Message } from '@xsai/shared-chat'
 
-import type { MemoryEmbeddingConfig, MemoryEntry, MemoryKind, MemorySearchResult } from '../../libs/memory/client'
+import type { MemoryConfig, MemoryEntry, MemoryKind, MemoryRetrievalConfigPayload, MemorySearchResult } from '../../libs/memory/client'
 
 import { errorMessageFrom } from '@moeru/std'
 import { chatMessagesToTurns, streamFrom } from '@proj-airi/core-agent'
@@ -159,11 +159,11 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
-  async function pushEmbeddingConfig(embedding: MemoryEmbeddingConfig) {
-    return await getClient().putConfig(embedding)
+  async function pushRetrievalConfig(payload: MemoryRetrievalConfigPayload): Promise<MemoryConfig & { backfilled: number }> {
+    return await getClient().putConfig(payload)
   }
 
-  async function fetchEmbeddingConfig() {
+  async function fetchServiceConfig(): Promise<MemoryConfig> {
     return await getClient().getConfig()
   }
 
@@ -206,8 +206,8 @@ export const useMemoryStore = defineStore('memory', () => {
     checkHealth,
     retrieveForQuery,
     extractFromTurn,
-    pushEmbeddingConfig,
-    fetchEmbeddingConfig,
+    pushRetrievalConfig,
+    fetchServiceConfig,
     listMemories,
     addMemory,
     updateMemory,

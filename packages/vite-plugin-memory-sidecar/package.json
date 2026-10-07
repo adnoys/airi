@@ -1,0 +1,19 @@
+{
+  "name": "@proj-airi/vite-plugin-memory-sidecar",
+  "type": "module",
+  "private": true,
+  "description": "Start the local airi-memory service alongside a Vite dev server",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

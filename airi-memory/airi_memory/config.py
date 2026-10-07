@@ -22,12 +22,26 @@ ENV_PORT = 'AIRI_MEMORY_PORT'
 ENV_EMBED_BASE_URL = 'AIRI_MEMORY_EMBED_BASE_URL'
 ENV_EMBED_API_KEY = 'AIRI_MEMORY_EMBED_API_KEY'
 ENV_EMBED_MODEL = 'AIRI_MEMORY_EMBED_MODEL'
+ENV_LLM_BASE_URL = 'AIRI_MEMORY_LLM_BASE_URL'
+ENV_LLM_API_KEY = 'AIRI_MEMORY_LLM_API_KEY'
+ENV_LLM_MODEL = 'AIRI_MEMORY_LLM_MODEL'
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 6430
 
+RETRIEVAL_EMBEDDING = 'embedding'
+RETRIEVAL_LLM = 'llm'
+
 
 class EmbeddingConfig(BaseModel):
+    base_url: str
+    api_key: str = ''
+    model: str
+
+
+class LLMConfig(BaseModel):
+    """Chat endpoint used to rerank memories in ``llm`` retrieval mode."""
+
     base_url: str
     api_key: str = ''
     model: str
@@ -38,6 +52,15 @@ class ServiceConfig(BaseModel):
     port: int = DEFAULT_PORT
     data_dir: Path
     embedding: EmbeddingConfig | None = None
+    llm: LLMConfig | None = None
+    retrieval: str = RETRIEVAL_EMBEDDING
+
+    @property
+    def mode(self) -> str:
+        """The retrieval mode that is actually usable right now."""
+        if self.retrieval == RETRIEVAL_LLM:
+            return RETRIEVAL_LLM if self.llm else (RETRIEVAL_EMBEDDING if self.embedding else RETRIEVAL_LLM)
+        return RETRIEVAL_EMBEDDING if self.embedding else (RETRIEVAL_LLM if self.llm else RETRIEVAL_EMBEDDING)
 
 
 def default_data_dir() -> Path:
@@ -53,11 +76,17 @@ def load_config(data_dir: Path | None = None) -> ServiceConfig:
     config_path = data_dir / CONFIG_FILE_NAME
 
     embedding: EmbeddingConfig | None = None
+    llm: LLMConfig | None = None
+    retrieval = RETRIEVAL_EMBEDDING
     if config_path.exists():
         with open(config_path, encoding='utf-8') as file:
             raw = json.load(file)
         if isinstance(raw.get('embedding'), dict):
             embedding = EmbeddingConfig.model_validate(raw['embedding'])
+        if isinstance(raw.get('llm'), dict):
+            llm = LLMConfig.model_validate(raw['llm'])
+        if raw.get('retrieval') in (RETRIEVAL_EMBEDDING, RETRIEVAL_LLM):
+            retrieval = raw['retrieval']
 
     if os.environ.get(ENV_EMBED_BASE_URL) and os.environ.get(ENV_EMBED_MODEL):
         embedding = EmbeddingConfig(
@@ -66,20 +95,31 @@ def load_config(data_dir: Path | None = None) -> ServiceConfig:
             model=os.environ[ENV_EMBED_MODEL],
         )
 
+    if os.environ.get(ENV_LLM_BASE_URL) and os.environ.get(ENV_LLM_MODEL):
+        llm = LLMConfig(
+            base_url=os.environ[ENV_LLM_BASE_URL],
+            api_key=os.environ.get(ENV_LLM_API_KEY, ''),
+            model=os.environ[ENV_LLM_MODEL],
+        )
+
     host = os.environ.get(ENV_HOST, DEFAULT_HOST)
     port = int(os.environ.get(ENV_PORT, DEFAULT_PORT))
-    return ServiceConfig(host=host, port=port, data_dir=data_dir, embedding=embedding)
+    return ServiceConfig(host=host, port=port, data_dir=data_dir, embedding=embedding, llm=llm, retrieval=retrieval)
 
 
-def save_embedding_config(data_dir: Path, embedding: EmbeddingConfig) -> None:
-    """Persist the embedding settings; other fields stay untouched."""
+def save_service_config(data_dir: Path, embedding: EmbeddingConfig | None, llm: LLMConfig | None, retrieval: str) -> None:
+    """Persist the retrieval settings; other fields stay untouched."""
     data_dir.mkdir(parents=True, exist_ok=True)
     config_path = data_dir / CONFIG_FILE_NAME
     raw: dict = {}
     if config_path.exists():
         with open(config_path, encoding='utf-8') as file:
             raw = json.load(file)
-    raw['embedding'] = embedding.model_dump()
+    if embedding is not None:
+        raw['embedding'] = embedding.model_dump()
+    if llm is not None:
+        raw['llm'] = llm.model_dump()
+    raw['retrieval'] = retrieval
     tmp_path = config_path.with_suffix('.json.tmp')
     with open(tmp_path, 'w', encoding='utf-8') as file:
         json.dump(raw, file, ensure_ascii=False, indent=2)

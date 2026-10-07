@@ -508,7 +508,14 @@ pages:
     auto-extract: Auto-extract memories
     auto-extract-description: After each reply, save lasting facts with the chat model
     embedding-title: Embedding API
-    embedding-description: Sent to the airi-memory service. It embeds memories for retrieval
+    embedding-description: How the airi-memory service finds memories relevant to what you just said
+    retrieval-mode: Retrieval mode
+    retrieval-mode-description: Vector API embeds memories; chat model rerank picks memories with the chat model
+    retrieval-embedding: Vector API
+    retrieval-llm: Chat model rerank
+    llm-base-url: Chat API base URL
+    llm-base-url-description: OpenAI-compatible chat root, for example https://api.deepseek.com
+    llm-model-description: Chat model used to pick the relevant memories, for example deepseek-chat
     embedding-missing-fields: Base URL and model are required
     embedding-saved: Embedding settings saved to the memory service
     base-url: Base URL
@@ -524,6 +531,7 @@ pages:
     memory-duplicate: Already stored. The existing memory was reinforced
     memory-deleted: Memory deleted
     memories-cleared: All memories cleared
+    clear-all: Clear all memories
     list-title: Memories
     list-empty: No memories yet
     search-placeholder: Filter memories

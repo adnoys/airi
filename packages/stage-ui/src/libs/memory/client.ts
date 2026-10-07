@@ -33,11 +33,7 @@ const memorySearchResultSchema = object({
   time_relevance: number(),
 })
 
-const healthSchema = object({
-  status: literal('ok'),
-  version: string(),
-  embedding_configured: boolean(),
-})
+const memoryRetrievalModeSchema = union([literal('embedding'), literal('llm')])
 
 const embeddingConfigSchema = object({
   base_url: string(),
@@ -45,8 +41,31 @@ const embeddingConfigSchema = object({
   model: string(),
 })
 
+const llmConfigSchema = object({
+  base_url: string(),
+  api_key: string(),
+  model: string(),
+})
+
+const healthSchema = object({
+  status: literal('ok'),
+  version: string(),
+  embedding_configured: boolean(),
+  llm_configured: boolean(),
+  retrieval: memoryRetrievalModeSchema,
+})
+
 const configSchema = object({
   embedding: union([embeddingConfigSchema, null_()]),
+  llm: union([llmConfigSchema, null_()]),
+  retrieval: memoryRetrievalModeSchema,
+})
+
+const putConfigResponseSchema = object({
+  embedding: union([embeddingConfigSchema, null_()]),
+  llm: union([llmConfigSchema, null_()]),
+  retrieval: memoryRetrievalModeSchema,
+  backfilled: number(),
 })
 
 const createMemoryResponseSchema = object({
@@ -74,19 +93,24 @@ const clearMemoriesResponseSchema = object({
   deleted: number(),
 })
 
-const putConfigResponseSchema = object({
-  embedding: union([embeddingConfigSchema, null_()]),
-  backfilled: number(),
-})
-
 export type MemoryEntry = InferOutput<typeof memoryEntrySchema>
 export type MemorySearchResult = InferOutput<typeof memorySearchResultSchema>
 export type MemoryHealth = InferOutput<typeof healthSchema>
 export type MemoryEmbeddingConfig = InferOutput<typeof embeddingConfigSchema>
+export type MemoryLLMConfig = InferOutput<typeof llmConfigSchema>
+export type MemoryRetrievalMode = InferOutput<typeof memoryRetrievalModeSchema>
 export type MemoryKind = MemoryEntry['kind']
 
 export interface MemoryConfig {
   embedding: MemoryEmbeddingConfig | null
+  llm: MemoryLLMConfig | null
+  retrieval: MemoryRetrievalMode
+}
+
+export interface MemoryRetrievalConfigPayload {
+  embedding?: MemoryEmbeddingConfig
+  llm?: MemoryLLMConfig
+  retrieval: MemoryRetrievalMode
 }
 
 export class MemoryServiceError extends Error {}
@@ -97,7 +121,9 @@ export class MemoryServiceClient {
 
   constructor(baseUrl: string, fetcher: typeof fetch = fetch) {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
-    this.fetcher = fetcher
+    // Native fetch throws "Illegal invocation" when invoked as a method of
+    // another object, so pin it to the global object before storing it.
+    this.fetcher = fetcher.bind(globalThis)
   }
 
   private async request<T>(path: string, parse: ((body: unknown) => T) | undefined, init?: RequestInit): Promise<T> {
@@ -134,10 +160,10 @@ export class MemoryServiceClient {
     return this.request('/v1/config', body => parse(configSchema, body))
   }
 
-  async putConfig(embedding: MemoryEmbeddingConfig): Promise<MemoryConfig & { backfilled: number }> {
+  async putConfig(payload: MemoryRetrievalConfigPayload): Promise<MemoryConfig & { backfilled: number }> {
     return this.request('/v1/config', body => parse(putConfigResponseSchema, body), {
       method: 'PUT',
-      body: JSON.stringify({ embedding }),
+      body: JSON.stringify(payload),
     })
   }
 

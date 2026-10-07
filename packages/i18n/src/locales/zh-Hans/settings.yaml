@@ -478,7 +478,14 @@ pages:
     auto-extract: 自动提取记忆
     auto-extract-description: 每轮回复后，用对话模型把值得记住的事实存入记忆
     embedding-title: 嵌入 API
-    embedding-description: 会发送给 airi-memory 服务，用于把记忆向量化以便检索
+    embedding-description: airi-memory 服务如何找出与你刚说的话相关的记忆
+    retrieval-mode: 检索模式
+    retrieval-mode-description: 向量 API 将记忆向量化检索；聊天模型重排由聊天模型挑选相关记忆
+    retrieval-embedding: 向量 API
+    retrieval-llm: 聊天模型重排
+    llm-base-url: 聊天 API 根地址
+    llm-base-url-description: OpenAI 兼容聊天接口根地址，例如 https://api.deepseek.com
+    llm-model-description: 用于挑选相关记忆的聊天模型，例如 deepseek-chat
     embedding-missing-fields: Base URL 和模型为必填项
     embedding-saved: 嵌入设置已保存到记忆服务
     base-url: Base URL
@@ -494,6 +501,7 @@ pages:
     memory-duplicate: 已存在相同记忆，旧记忆得到强化
     memory-deleted: 记忆已删除
     memories-cleared: 已清空全部记忆
+    clear-all: 清空全部记忆
     list-title: 记忆列表
     list-empty: 还没有记忆
     search-placeholder: 过滤记忆

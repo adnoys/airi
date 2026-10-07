@@ -14,6 +14,7 @@ devlogs (DevLog 2025.04.06 / 2025.04.14):
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime, timezone
 
 SECONDS_PER_DAY = 86400.0
@@ -139,3 +140,43 @@ def rank_entries(
 
     results.sort(key=lambda item: item['score'], reverse=True)
     return results
+
+
+def _text_bigrams(text: str) -> set[str]:
+    """Character bigrams plus lowercase latin word tokens.
+
+    Bigrams make keyword matching work for CJK text without a
+    segmentation model; word tokens keep English matching exact.
+    """
+    tokens = set(re.findall(r'[a-z0-9]+', text.lower()))
+    compact = re.sub(r'\s+', '', text)
+    tokens |= {compact[i:i + 2] for i in range(len(compact) - 1)}
+    return tokens
+
+
+def keyword_scores(query: str, entries: list[dict]) -> list[float]:
+    """Coarse keyword relevance of each entry against the query.
+
+    Returns one overlap score in ``[0, 1]`` per entry, in input order.
+    This is the cheap first stage when no embedding model is available;
+    the chat model reranks the best candidates afterwards.
+    """
+    if not entries:
+        return []
+    query_terms = _text_bigrams(query)
+    if not query_terms:
+        return [0.0] * len(entries)
+    scores = []
+    for entry in entries:
+        entry_terms = _text_bigrams(str(entry.get('content', '')))
+        if not entry_terms:
+            scores.append(0.0)
+            continue
+        overlap = query_terms & entry_terms
+        scores.append(len(overlap) / max(1, len(query_terms & entry_terms | query_terms)))
+    return scores
+
+
+def normalize_text(content: str) -> str:
+    """Fold a memory's content for exact-text duplicate checks."""
+    return ''.join(content.split()).lower()
