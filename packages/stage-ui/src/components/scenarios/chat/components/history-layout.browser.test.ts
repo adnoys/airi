@@ -2,7 +2,8 @@ import type { ChatHistoryItem } from '../../../../types/chat'
 
 import en from '@proj-airi/i18n/locales/en'
 
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { createPinia, disposePinia } from 'pinia'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 import { createI18n } from 'vue-i18n'
 
@@ -10,6 +11,18 @@ import ChatHistory from './history.vue'
 
 import '@unocss/reset/tailwind.css'
 import 'virtual:uno.css'
+
+const pinias: ReturnType<typeof createPinia>[] = []
+afterEach(() => {
+  for (const pinia of pinias.splice(0))
+    disposePinia(pinia)
+})
+
+function createPlugins() {
+  const pinia = createPinia()
+  pinias.push(pinia)
+  return [pinia, createI18n({ legacy: false, locale: 'en', messages: { en } })]
+}
 
 it.each(['desktop', 'mobile'] as const)('centers timestamps after five minutes of inactivity on %s', async (variant) => {
   const start = new Date('2026-10-06T10:00:00Z').getTime()
@@ -25,7 +38,7 @@ it.each(['desktop', 'mobile'] as const)('centers timestamps after five minutes o
       ],
       style: 'height: 600px; width: 360px;',
     },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
+    global: { plugins: createPlugins() },
   })
   onTestFinished(() => screen.unmount())
   await vi.waitFor(() => {
@@ -56,7 +69,7 @@ it('keeps a bubble inside a narrow history when its folded reasoning holds a lon
   }]
   const screen = await render(ChatHistory, {
     props: { messages, style: 'height: 600px; width: 300px;' },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
+    global: { plugins: createPlugins() },
   })
   onTestFinished(() => screen.unmount())
 

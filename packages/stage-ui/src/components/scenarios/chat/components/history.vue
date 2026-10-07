@@ -7,6 +7,7 @@ import type { ChatHistoryReplyPayload } from '../reply'
 import type { ChatToolCallRendererRegistry } from './tool-call-renderer'
 
 import { useNow } from '@vueuse/core'
+import { storeToRefs } from 'pinia'
 import { Virtualizer } from 'virtua/vue'
 import { computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -18,6 +19,7 @@ import ChatHistoryMessageFrame from './history-message-frame.vue'
 import ChatHistoryTimeSeparator from './history-time-separator.vue'
 import ChatUserItem from './user-item.vue'
 
+import { useAiriCardStore } from '../../../../stores/modules/airi-card'
 import { useChatHistoryScroll } from '../composables/use-chat-history-scroll'
 import { useChatHistoryTopFade } from '../composables/use-chat-history-top-fade'
 import { useVirtualizerBottomAlignment, useVirtualizerScroll } from '../composables/use-virtualizer-scroll'
@@ -89,9 +91,11 @@ const { scrollToIndex } = useVirtualizerScroll({
 })
 
 const { t } = useI18n()
+const { activeCard } = storeToRefs(useAiriCardStore())
 const now = useNow({ interval: 60_000 })
+const activeCardName = computed(() => activeCard.value?.name?.trim() || undefined)
 const labels = computed(() => ({
-  assistant: props.assistantLabel ?? t('stage.chat.message.character-name.airi'),
+  assistant: props.assistantLabel ?? activeCardName.value ?? t('stage.chat.message.character-name.airi'),
   user: props.userLabel ?? t('stage.chat.message.character-name.you'),
   error: props.errorLabel ?? t('stage.chat.message.character-name.core-system'),
   retry: props.retryLabel ?? t('stage.chat.actions.retry'),

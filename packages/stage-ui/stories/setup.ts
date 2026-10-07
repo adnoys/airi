@@ -3,6 +3,7 @@ import type { Plugin } from 'vue'
 import { autoAnimatePlugin } from '@formkit/auto-animate/vue'
 import { defineSetupVue3 } from '@histoire/plugin-vue'
 import { MotionPlugin } from '@vueuse/motion'
+import { createPinia } from 'pinia'
 
 import CharacterCardColorControls from './components/CharacterCardColorControls.vue'
 import ThemeColorsHueControl from './components/ThemeColorsHueControl.vue'
@@ -28,6 +29,7 @@ import '@fontsource/m-plus-rounded-1c/index.css'
 import '@fontsource-variable/nunito/index.css'
 
 export const setupVue3 = defineSetupVue3(({ app }) => {
+  app.use(createPinia())
   app.use(MotionPlugin)
   app.use(i18n)
   // TODO: Fix autoAnimatePlugin type error

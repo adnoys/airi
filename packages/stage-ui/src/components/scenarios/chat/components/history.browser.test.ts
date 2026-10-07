@@ -2,7 +2,8 @@ import type { ChatHistoryItem } from '../../../../types/chat'
 
 import en from '@proj-airi/i18n/locales/en'
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, disposePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
@@ -17,12 +18,24 @@ vi.mock('web-haptics/vue', () => ({
   useWebHaptics: () => ({ trigger: triggerHaptic }),
 }))
 
+const pinias: ReturnType<typeof createPinia>[] = []
+afterEach(() => {
+  for (const pinia of pinias.splice(0))
+    disposePinia(pinia)
+})
+
 function createEnglishI18n() {
   return createI18n({
     legacy: false,
     locale: 'en',
     messages: { en },
   })
+}
+
+function createPlugins() {
+  const pinia = createPinia()
+  pinias.push(pinia)
+  return [pinia, createEnglishI18n()]
 }
 
 function dispatchPointerSwipe(element: HTMLElement, startX: number, endX: number, pointerType: 'mouse' | 'touch' = 'mouse') {
@@ -153,7 +166,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -181,7 +194,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -212,7 +225,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -244,7 +257,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -299,7 +312,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -341,7 +354,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -394,7 +407,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -434,7 +447,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -453,7 +466,7 @@ describe('chat history', () => {
         style: 'height: 480px; width: 480px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -473,7 +486,7 @@ describe('chat history', () => {
       props: {
         messages: [{ role: 'error', content: '**Retry this request**' }],
       },
-      global: { plugins: [createEnglishI18n()] },
+      global: { plugins: createPlugins() },
     })
 
     await vi.waitFor(() => expect(screen.container.querySelector('strong')?.textContent).toBe('Retry this request'))
@@ -494,7 +507,7 @@ describe('chat history', () => {
         variant: 'mobile',
         style: 'height: 480px; width: 320px; overflow-y: auto;',
       },
-      global: { plugins: [createEnglishI18n()] },
+      global: { plugins: createPlugins() },
     })
 
     await vi.waitFor(() => expect(screen.container.textContent).toContain('Remote sent 400 response'))
@@ -523,7 +536,7 @@ describe('chat history', () => {
         style: 'height: 480px; width: 480px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -554,7 +567,7 @@ describe('chat history', () => {
         style: 'height: 480px; width: 480px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -571,7 +584,7 @@ describe('chat history', () => {
         style: 'height: 480px; width: 480px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -599,7 +612,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -677,7 +690,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -724,7 +737,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -773,7 +786,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -835,7 +848,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -913,7 +926,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -981,7 +994,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1053,7 +1066,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1105,7 +1118,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1144,7 +1157,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1204,7 +1217,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1248,7 +1261,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1297,7 +1310,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1345,7 +1358,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1386,7 +1399,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1443,7 +1456,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1495,7 +1508,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1544,7 +1557,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1584,7 +1597,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1609,7 +1622,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1654,7 +1667,7 @@ describe('chat history', () => {
         style: 'height: 240px; width: 320px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
@@ -1694,7 +1707,7 @@ describe('chat history', () => {
     }
     const screen = await render(ChatHistory, {
       props: { messages: [message], style: 'height: 480px; width: 480px; overflow-y: auto;' },
-      global: { plugins: [createEnglishI18n()] },
+      global: { plugins: createPlugins() },
     })
     await screen.getByLabelText('Re-run tool call').nth(1).click()
     expect(screen.emitted('toolCallRerun')).toEqual([[expect.objectContaining({ invocationId: 'invocation-1', toolCallId: 'same' })]])
@@ -1730,7 +1743,7 @@ describe('chat history', () => {
         style: 'height: 480px; width: 480px; overflow-y: auto;',
       },
       global: {
-        plugins: [createEnglishI18n()],
+        plugins: createPlugins(),
       },
     })
 
