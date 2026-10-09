@@ -9,11 +9,13 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vitest": "catalog:vitest"
   }
 }

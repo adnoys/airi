@@ -4,7 +4,7 @@ import type { Plugin } from 'vite'
 
 import process from 'node:process'
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -27,8 +27,9 @@ export interface MemorySidecarOptions {
   command?: string
 }
 
-const SPAWN_TIMEOUT_MS = 8000
+const SPAWN_TIMEOUT_MS = 20000
 const HEALTH_POLL_INTERVAL_MS = 250
+const STDERR_LIMIT = 2000
 
 async function isHealthy(port: number, healthPath: string): Promise<boolean> {
   try {
@@ -93,16 +94,80 @@ function interpreterCandidates(explicit?: string): InterpreterCandidate[] {
     candidates.push({ command: explicit, prefix: [] })
   if (process.env.AIRI_MEMORY_PYTHON)
     candidates.push({ command: process.env.AIRI_MEMORY_PYTHON, prefix: [] })
+  // `conda run` executes a command. The command is `python -m airi_memory`.
   if (process.platform !== 'win32')
-    candidates.push({ command: 'conda', prefix: ['run', '-n', 'airi', '--no-capture-output'] })
+    candidates.push({ command: 'conda', prefix: ['run', '-n', 'airi', '--no-capture-output', 'python'] })
   candidates.push({ command: 'python3', prefix: [] }, { command: 'python', prefix: [] })
   return candidates
 }
 
-function trySpawn(candidate: InterpreterCandidate, port: number, cwd: string): ChildProcess | undefined {
+interface SpawnedService {
+  child: ChildProcess
+  stderr: () => string
+}
+
+/**
+ * Stops the spawned process and every process it started.
+ *
+ * `conda run` puts a shell between the spawned process and the memory server.
+ * Killing only the direct child leaves that server running after Vite exits.
+ */
+function killProcessTree(pid: number) {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    return
+  }
+
+  const listed = spawnSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+  const children = new Map<number, number[]>()
+  for (const line of listed.stdout?.split('\n') ?? []) {
+    const [pidText, parentText] = line.trim().split(/\s+/)
+    const childPid = Number(pidText)
+    const parentPid = Number(parentText)
+    if (!Number.isInteger(childPid) || !Number.isInteger(parentPid))
+      continue
+    const group = children.get(parentPid) ?? []
+    group.push(childPid)
+    children.set(parentPid, group)
+  }
+
+  const pids: number[] = []
+  const visit = (current: number) => {
+    for (const next of children.get(current) ?? [])
+      visit(next)
+    pids.push(current)
+  }
+  visit(pid)
+
+  for (const target of pids) {
+    try {
+      process.kill(target, 'SIGTERM')
+    }
+    catch {
+      // The process already exited.
+    }
+  }
+}
+
+function trySpawn(candidate: InterpreterCandidate, port: number, cwd: string): SpawnedService | undefined {
   const args = [...candidate.prefix, '-m', 'airi_memory', '--port', String(port)]
   try {
-    return spawn(candidate.command, args, { cwd, stdio: 'ignore' })
+    const child = spawn(candidate.command, args, {
+      cwd,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    const stderrChunks: string[] = []
+    child.stderr?.setEncoding('utf8')
+    child.stderr?.on('data', (chunk: string) => {
+      stderrChunks.push(chunk)
+      const joined = stderrChunks.join('')
+      if (joined.length > STDERR_LIMIT)
+        stderrChunks.splice(0, stderrChunks.length, joined.slice(-STDERR_LIMIT))
+    })
+    return {
+      child,
+      stderr: () => stderrChunks.join('').trim().slice(-STDERR_LIMIT),
+    }
   }
   catch {
     return undefined
@@ -147,10 +212,10 @@ export function MemorySidecar(options: MemorySidecarOptions = {}): Plugin {
   let child: ChildProcess | undefined
 
   const stopOwnedChild = () => {
-    if (!child)
-      return
-    child.kill()
+    const pid = child?.pid
     child = undefined
+    if (pid)
+      killProcessTree(pid)
   }
 
   return {
@@ -171,28 +236,35 @@ export function MemorySidecar(options: MemorySidecarOptions = {}): Plugin {
         return
       }
 
+      let lastError = ''
       for (const candidate of interpreterCandidates(options.command)) {
         const spawned = trySpawn(candidate, port, cwd)
         if (!spawned)
           continue
 
-        const healthy = await waitForSpawnedHealth(spawned, port, healthPath)
+        const healthy = await waitForSpawnedHealth(spawned.child, port, healthPath)
         if (healthy) {
-          child = spawned
-          spawned.once('exit', () => {
-            if (child === spawned)
+          child = spawned.child
+          spawned.child.once('exit', () => {
+            if (child === spawned.child)
               child = undefined
           })
           server.config.logger.info(`[airi-memory] sidecar started on port ${port} via ${candidate.command}`)
           break
         }
 
-        spawned.kill()
+        // A missing command emits an error and no stderr. Keep the previous message.
+        const stderr = spawned.stderr()
+        if (stderr)
+          lastError = stderr
+        if (spawned.child.pid)
+          killProcessTree(spawned.child.pid)
       }
 
       if (!child) {
+        const detail = lastError ? ` ${lastError}` : ''
         server.config.logger.warn(
-          `[airi-memory] could not start the sidecar automatically. Memory stays off until the service is reachable; start it with \`python -m airi_memory\` in ${cwd}`,
+          `[airi-memory] could not start the sidecar automatically. Memory stays off until the service is reachable. Start it with \`python -m airi_memory\` in ${cwd}.${detail}`,
         )
         return
       }
@@ -201,13 +273,15 @@ export function MemorySidecar(options: MemorySidecarOptions = {}): Plugin {
         stopOwnedChild()
         process.off('SIGINT', dispose)
         process.off('SIGTERM', dispose)
+        process.off('exit', stopOwnedChild)
       }
 
-      // Vite closes the HTTP server on stop. SIGINT/SIGTERM cover Ctrl+C paths
-      // that tear the process down before the close event runs.
+      // Vite closes the HTTP server on stop. SIGINT and SIGTERM cover Ctrl+C.
+      // The exit hook covers a shutdown that leaves the process before close runs.
       server.httpServer?.once('close', dispose)
       process.once('SIGINT', dispose)
       process.once('SIGTERM', dispose)
+      process.on('exit', stopOwnedChild)
     },
   }
 }
