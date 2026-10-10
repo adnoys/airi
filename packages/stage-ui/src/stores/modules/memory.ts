@@ -83,8 +83,8 @@ export const useMemoryStore = defineStore('memory', () => {
 
   /**
    * Retrieves memories for one user message and caches them for the request
-   * snapshot. A failing service degrades to no memories and must never block
-   * or fail the chat send.
+   * snapshot. Chat calls this after the user message is already visible.
+   * A failing service degrades to no memories and must not fail the turn.
    */
   async function retrieveForQuery(query: string): Promise<void> {
     if (!configured.value) {

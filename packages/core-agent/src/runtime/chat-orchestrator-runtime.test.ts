@@ -257,6 +257,39 @@ describe('createChatOrchestratorRuntime', () => {
     expect(harness.stream).toHaveBeenCalledOnce()
   })
 
+  it('stores the user message before prepareContext resolves', async () => {
+    const harness = createHarness()
+    const release = Promise.withResolvers<void>()
+    let storedBeforeContext = false
+    const request = harness.runtime.submit('remember this', {
+      model: 'gpt-test',
+      chatProvider: provider,
+      messageId: 'visible-user',
+      prepareContext: async () => {
+        storedBeforeContext = harness.sessionMessages['session-1'].some(message => message.id === 'visible-user' && message.role === 'user')
+        harness.contextSnapshot['system:memories'] = [{
+          id: 'memory',
+          contextId: 'system:memories',
+          strategy: ContextUpdateStrategy.ReplaceSelf,
+          text: 'likes tea',
+          createdAt: 1,
+        }]
+        await release.promise
+      },
+    }, 'session-1')
+
+    await vi.waitFor(() => expect(storedBeforeContext).toBe(true))
+    expect(harness.stream).not.toHaveBeenCalled()
+    release.resolve()
+    await request.done
+
+    const user = harness.stream.mock.calls[0][2].turns.find(turn => turn.type === 'user')
+    expect(user?.content).toContainEqual({
+      type: 'runtime-context',
+      entries: [{ source: 'system:memories', text: 'likes tea' }],
+    })
+  })
+
   // https://github.com/moeru-ai/airi/issues/2738
   it('runs separate sessions concurrently while preserving each session order', async () => {
     const harness = createHarness()

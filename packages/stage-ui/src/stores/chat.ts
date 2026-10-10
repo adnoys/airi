@@ -570,11 +570,13 @@ export const useChatStore = defineStore('chat', () => {
       captured.signal.throwIfAborted()
       const stickers = captured.stickers ?? await stickersStore.selectCatalogForReply()
       captured.signal.throwIfAborted()
-      await memoryStore.retrieveForQuery(sendingMessage)
-      captured.signal.throwIfAborted()
       if (chatSession.getSessionGeneration(sessionId) !== generation)
         throw new DOMException('Chat session changed during preparation', 'AbortError')
-      return runtime.submit(sendingMessage, { ...captured, stickers }, sessionId)
+      return runtime.submit(sendingMessage, {
+        ...captured,
+        stickers,
+        prepareContext: () => memoryStore.retrieveForQuery(sendingMessage),
+      }, sessionId)
     })()
     const request = {
       accepted: prepared.then(value => value.accepted),
@@ -638,9 +640,6 @@ export const useChatStore = defineStore('chat', () => {
     const stickers = await stickersStore.selectCatalogForReply()
     signal.throwIfAborted()
 
-    await memoryStore.retrieveForQuery(payload.text)
-    signal.throwIfAborted()
-
     const chatProvider = await consciousnessStore.getChatProviderInstance(providerId)
     signal.throwIfAborted()
 
@@ -661,6 +660,7 @@ export const useChatStore = defineStore('chat', () => {
       topP,
       systemPromptSupplement,
       stickers,
+      prepareContext: () => memoryStore.retrieveForQuery(payload.text),
       tools: async () => {
         const references = collectToolReferences(payload.sessionId, payload.tools)
         return llmToolsStore.getToolsByNames(...references.map(tool => tool.name))

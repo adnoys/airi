@@ -148,6 +148,11 @@ export interface ChatOrchestratorSendOptions {
   temperature?: number
   /** Top_p for the LLM request. */
   topP?: number
+  /**
+   * Runs after the user message is stored and before the prompt snapshot.
+   * Slow preparation stays here so the sent message is already on screen.
+   */
+  prepareContext?: () => Promise<void>
 }
 
 interface QueuedSend {
@@ -850,6 +855,10 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
         ],
       })
 
+      await options.prepareContext?.()
+      if (shouldAbort())
+        return
+
       const context = buildContext(sessionMessagesForSend)
       const stickerPrompt = stickers?.length
         ? [
@@ -870,6 +879,7 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
       }
 
       const contextsSnapshot = deps.context.snapshot()
+      streamingMessageContext.contexts = contextsSnapshot
       const entries = Object.entries(contextsSnapshot).flatMap(([source, messages]) => messages.map(message => ({ source, text: message.text })))
       if (entries.length) {
         const lastMessage = context.turns.at(-1)
