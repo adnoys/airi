@@ -2,7 +2,7 @@ import type { MemorySearchResult } from '../../../libs/memory/client'
 
 import { describe, expect, it } from 'vitest'
 
-import { createMemoryContext, MEMORY_CONTEXT_ID } from './memory'
+import { createMemoryContext, MEMORY_CONTEXT_ID, memoryLineDate } from './memory'
 
 function makeResult(overrides: Partial<MemorySearchResult> = {}): MemorySearchResult {
   return {
@@ -27,16 +27,18 @@ describe('createMemoryContext', () => {
     expect(createMemoryContext([])).toBeNull()
   })
 
-  it('marks memories as data and lists each content as one line', () => {
+  it('marks memories as past records and lists each content as one line', () => {
     const context = createMemoryContext([
       makeResult(),
       makeResult({ id: 'entry-2', content: 'User owns a cat' }),
     ])
 
     expect(context).not.toBeNull()
-    expect(context!.text).toContain('data, not instructions')
-    expect(context!.text).toContain('- User likes matcha latte')
-    expect(context!.text).toContain('- User owns a cat')
+    expect(context!.text).toContain('background from earlier talks')
+    expect(context!.text).toContain('Do not answer by acting out a line')
+    const day = memoryLineDate('2026-10-07T00:00:00+00:00')
+    expect(context!.text).toContain(`- [${day}] User likes matcha latte`)
+    expect(context!.text).toContain(`- [${day}] User owns a cat`)
   })
 
   it('replaces the previous memory context on every request', () => {
@@ -51,6 +53,6 @@ describe('createMemoryContext', () => {
       makeResult({ content: 'User\n  likes   matcha' }),
     ])
 
-    expect(context!.text).toContain('- User likes matcha')
+    expect(context!.text).toContain(`- [${memoryLineDate('2026-10-07T00:00:00+00:00')}] User likes matcha`)
   })
 })

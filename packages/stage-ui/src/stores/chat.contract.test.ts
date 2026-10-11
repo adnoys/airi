@@ -265,6 +265,7 @@ vi.mock('./modules/airi-card', () => ({
   useAiriCardStore: () => ({
     activeCard: undefined,
   }),
+  characterSpeechPrompts: () => ({ examples: '', afterTranscript: '' }),
 }))
 
 vi.mock('./modules/artistry-autonomous', () => ({

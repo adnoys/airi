@@ -153,6 +153,10 @@ export interface ChatOrchestratorSendOptions {
    * Slow preparation stays here so the sent message is already on screen.
    */
   prepareContext?: () => Promise<void>
+  /** Sample dialogue placed before the live transcript. */
+  characterExamples?: string
+  /** Speaking rules placed after the transcript and retrieved context. */
+  characterAfterTranscript?: string
 }
 
 interface QueuedSend {
@@ -578,6 +582,34 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
     return { turns }
   }
 
+  function placeCharacterSpeech(turns: Conversation['turns'], examples: string | undefined, afterTranscript: string | undefined) {
+    const exampleText = examples?.trim()
+    if (exampleText) {
+      const exampleTurn: Conversation['turns'][number] = {
+        id: 'character-examples',
+        type: 'system',
+        authority: 'system',
+        content: [{ type: 'text', text: exampleText }],
+      }
+      const firstDialogue = turns.findIndex(turn => turn.type !== 'system')
+      if (firstDialogue === -1)
+        turns.push(exampleTurn)
+      else
+        turns.splice(firstDialogue, 0, exampleTurn)
+    }
+
+    const afterText = afterTranscript?.trim()
+    if (!afterText)
+      return
+
+    turns.push({
+      id: 'character-after-transcript',
+      type: 'system',
+      authority: 'system',
+      content: [{ type: 'text', text: afterText }],
+    })
+  }
+
   async function performSend(
     sendingMessage: string,
     options: ChatOrchestratorSendOptions,
@@ -887,6 +919,8 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
           lastMessage.content.push({ type: 'runtime-context', entries })
         deps.onLifecycle?.({ phase: 'prompt-context-built', channel: 'chat', sessionId, details: { contexts: contextsSnapshot } })
       }
+
+      placeCharacterSpeech(context.turns, options.characterExamples, options.characterAfterTranscript)
 
       // Hooks, diagnostics, and the plugin bridge consume a display projection. It contains
       // no native continuation state and never becomes a provider request.

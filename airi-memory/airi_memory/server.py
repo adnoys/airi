@@ -156,6 +156,14 @@ class MemoryService:
 
     async def search(self, payload: SearchRequest) -> dict:
         now = time.time()
+        # A named day is a date filter. Resolve it from today, then keep only
+        # entries stored on that local calendar day. Skip reranking: the query
+        # often shares no words with what was said that day.
+        named_day = scoring.entries_for_named_days(payload.query, self.store.raw_entries(), now)
+        if named_day is not None:
+            limit = min(len(named_day), max(payload.top_k, LLM_PREFILTER_LIMIT))
+            return self._finish_hits(named_day[:limit], now, similarity=1.0)
+
         if self.mode == RETRIEVAL_EMBEDDING:
             embedder = self.require_embedder()
             query_vector = await embedder.embed(payload.query)
@@ -201,6 +209,31 @@ class MemoryService:
         for position, candidate_index in enumerate(picked):
             entry = candidates[candidate_index]
             similarity = max(0.0, 1.0 - position * LLM_RANK_SCORE_STEP)
+            relevance = scoring.time_relevance(entry, now, max_decayed)
+            score = scoring.SIMILARITY_WEIGHT * similarity + scoring.TIME_RELEVANCE_WEIGHT * relevance
+            reinforced = scoring.reinforce(
+                {**entry, 'score': score, 'similarity': similarity, 'time_relevance': relevance},
+                now,
+            )
+            self._persist_hit(reinforced)
+            results.append(public_entry(reinforced))
+        return {'results': results}
+
+    def _finish_hits(self, entries: list[dict], now: float, similarity: float) -> dict:
+        """Reinforce the given entries and return them in that order."""
+        max_decayed = max(
+            (
+                scoring.decayed_strength(
+                    float(entry.get('strength', scoring.INITIAL_STRENGTH)),
+                    float(entry.get('half_life_days', scoring.INITIAL_HALF_LIFE_DAYS)),
+                    scoring.age_in_days(entry['created_at'], now),
+                )
+                for entry in entries
+            ),
+            default=0.0,
+        )
+        results = []
+        for entry in entries:
             relevance = scoring.time_relevance(entry, now, max_decayed)
             score = scoring.SIMILARITY_WEIGHT * similarity + scoring.TIME_RELEVANCE_WEIGHT * relevance
             reinforced = scoring.reinforce(

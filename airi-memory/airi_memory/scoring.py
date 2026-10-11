@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 SECONDS_PER_DAY = 86400.0
 
@@ -180,3 +180,44 @@ def keyword_scores(query: str, entries: list[dict]) -> list[float]:
 def normalize_text(content: str) -> str:
     """Fold a memory's content for exact-text duplicate checks."""
     return ''.join(content.split()).lower()
+
+
+# Longer phrases first so 大前天 is not also read as 前天.
+_NAMED_DAY_PATTERN = re.compile('大前天|前天|昨天|今天')
+_NAMED_DAY_OFFSETS = {
+    '今天': 0,
+    '昨天': 1,
+    '前天': 2,
+    '大前天': 3,
+}
+
+
+def named_day_offsets(query: str) -> list[int]:
+    """Day offsets named in the query. 0 is today, 1 is yesterday."""
+    offsets: list[int] = []
+    for match in _NAMED_DAY_PATTERN.finditer(query):
+        offset = _NAMED_DAY_OFFSETS[match.group(0)]
+        if offset not in offsets:
+            offsets.append(offset)
+    return offsets
+
+
+def entry_local_date(created_at: str) -> datetime.date:
+    """Calendar day of a stored timestamp in the machine's local timezone."""
+    return datetime.fromtimestamp(parse_timestamp(created_at)).date()
+
+
+def entries_for_named_days(query: str, entries: list[dict], now_seconds: float) -> list[dict] | None:
+    """Entries stored on a day the query names, oldest first.
+
+    Returns None when the query names no day. Returns an empty list when
+    it names a day and nothing was stored then.
+    """
+    offsets = named_day_offsets(query)
+    if not offsets:
+        return None
+    today = datetime.fromtimestamp(now_seconds).date()
+    wanted = {today - timedelta(days=offset) for offset in offsets}
+    matched = [entry for entry in entries if entry_local_date(entry['created_at']) in wanted]
+    matched.sort(key=lambda entry: entry['created_at'])
+    return matched

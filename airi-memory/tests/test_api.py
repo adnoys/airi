@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import zlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,25 @@ class TestLLMRetrieval:
         assert second['deduplicated'] is True
         assert second['entry']['id'] == first['id']
         assert second['entry']['recall_count'] == 1
+
+    def test_named_day_search_skips_rerank_and_uses_the_local_date(self, tmp_path: Path, reranker: FakeReranker) -> None:
+        store = MemoryStore(tmp_path)
+        config = ServiceConfig(
+            data_dir=tmp_path,
+            retrieval='llm',
+            llm=LLMConfig(base_url='https://api.deepseek.com', model='deepseek-chat'),
+        )
+        app = create_app(config, store, llm_factory=lambda _config: reranker)
+        local_now = datetime.now().astimezone()
+        day_before = (local_now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+        with TestClient(app) as test_client:
+            test_client.post('/v1/memories', json={'content': '用户想要鲸鱼的图片'})
+            test_client.post('/v1/memories', json={'content': '用户昨天说想听我爱你'})
+            whale = next(entry for entry in store.raw_entries() if entry['content'] == '用户想要鲸鱼的图片')
+            store.replace(whale['id'], {**whale, 'created_at': day_before.astimezone(timezone.utc).isoformat()})
+            body = test_client.post('/v1/search', json={'query': '我前天说了什么', 'top_k': 6}).json()
+        assert reranker.calls == []
+        assert [entry['content'] for entry in body['results']] == ['用户想要鲸鱼的图片']
 
     def test_search_reranks_through_the_chat_model(self, llm_client: TestClient, reranker: FakeReranker) -> None:
         llm_client.post('/v1/memories', json={'content': 'User likes matcha'})

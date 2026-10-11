@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useProviderStore } from '../providers/provider'
 import { useSettingsStageModel } from '../settings/stage-model'
-import { useAiriCardStore } from './airi-card'
+import { characterSpeechPrompts, useAiriCardStore } from './airi-card'
 import { useConsciousnessStore } from './consciousness'
 import { useSpeechStore } from './speech'
 import { useVisionStore } from './vision'
@@ -560,6 +560,19 @@ describe('airi-card store', () => {
     expect(cardStore.systemPrompt).not.toContain('Answer the latest observation')
     expect(cardStore.systemPrompt).not.toContain('Welcome to the observatory')
     expect(cardStore.systemPrompt).not.toContain('What did you find?')
+  })
+
+  it('formats example dialogue and the speech rules that follow the transcript', () => {
+    expect(characterSpeechPrompts({
+      name: 'adnoys',
+      personality: 'Possessive.',
+      postHistoryInstructions: 'Stay close.',
+      messageExample: [['{{user}}: Hi', '{{char}}: Mine.']],
+    })).toEqual({
+      examples: 'Example dialogue for adnoys. Match this voice.\n\nUser: Hi\nadnoys: Mine.',
+      afterTranscript: 'Character personality:\nPossessive.\n\nStay close.\n\nThe next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.',
+    })
+    expect(characterSpeechPrompts(undefined)).toEqual({ examples: '', afterTranscript: '' })
   })
 
   it('falls back to the default card when the active custom card is deleted', async () => {

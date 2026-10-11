@@ -38,7 +38,7 @@ import { describeChatImages, replaceToolResultImages } from './chat/image-projec
 import { useChatSessionStore } from './chat/session-store'
 import { useChatStreamStore } from './chat/stream-store'
 import { useContextObservabilityStore } from './devtools/context-observability'
-import { useAiriCardStore } from './modules/airi-card'
+import { characterSpeechPrompts, useAiriCardStore } from './modules/airi-card'
 import { useAutonomousArtistryStore } from './modules/artistry-autonomous'
 import { useConsciousnessStore } from './modules/consciousness'
 import { useMemoryStore } from './modules/memory'
@@ -248,6 +248,14 @@ export const useChatStore = defineStore('chat', () => {
    * until the leader ends, and clearing or deleting a session removes its group.
    */
   const failedImageReads = new Map<string, Set<string>>()
+
+  function activeCharacterSpeech(): Pick<ChatOrchestratorSendOptions, 'characterAfterTranscript' | 'characterExamples'> {
+    const speech = characterSpeechPrompts(cardStore.activeCard)
+    return {
+      ...(speech.examples ? { characterExamples: speech.examples } : {}),
+      ...(speech.afterTranscript ? { characterAfterTranscript: speech.afterTranscript } : {}),
+    }
+  }
 
   function failedImageReadsOf(sessionId: string) {
     let reads = failedImageReads.get(sessionId)
@@ -538,6 +546,22 @@ export const useChatStore = defineStore('chat', () => {
     },
   })
 
+  /**
+   * Loads memories for this request, then revises them from their source dialogues.
+   *
+   * The model reads the list after this returns. A dialogue that cannot be
+   * read leaves the stored memories unchanged.
+   */
+  async function prepareMemoryContext(query: string): Promise<void> {
+    await memoryStore.retrieveForQuery(query)
+    try {
+      await memoryStore.reconcileRetrievedMemories(sessionId => chatSession.getSessionDialogue(sessionId))
+    }
+    catch (error) {
+      console.warn('[memory] Failed to read the source dialogue for a memory:', errorMessageFrom(error))
+    }
+  }
+
   // One request owns preparation and generation. Cancellation cannot miss asynchronous startup.
   const requests = new Map<string, {
     sessionId: string
@@ -575,7 +599,8 @@ export const useChatStore = defineStore('chat', () => {
       return runtime.submit(sendingMessage, {
         ...captured,
         stickers,
-        prepareContext: () => memoryStore.retrieveForQuery(sendingMessage),
+        ...activeCharacterSpeech(),
+        prepareContext: () => prepareMemoryContext(sendingMessage),
       }, sessionId)
     })()
     const request = {
@@ -660,7 +685,8 @@ export const useChatStore = defineStore('chat', () => {
       topP,
       systemPromptSupplement,
       stickers,
-      prepareContext: () => memoryStore.retrieveForQuery(payload.text),
+      ...activeCharacterSpeech(),
+      prepareContext: () => prepareMemoryContext(payload.text),
       tools: async () => {
         const references = collectToolReferences(payload.sessionId, payload.tools)
         return llmToolsStore.getToolsByNames(...references.map(tool => tool.name))

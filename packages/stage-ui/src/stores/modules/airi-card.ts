@@ -27,12 +27,55 @@ import { useVisionStore } from './vision'
 
 export type { AiriCard, AiriExtension } from '../../types/airiCard'
 
+/** Empty speech placement. Callers can reuse this object. */
+const EMPTY_CHARACTER_SPEECH = { examples: '', afterTranscript: '' }
+
+/** Last line of the prompt. It keeps the reply in dialogue instead of a comment on the prompt. */
+const SPOKEN_LINE_ONLY = 'The next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.'
+
+/**
+ * Speech text that stays out of the standing system prompt.
+ *
+ * Examples sit before the live transcript. The system prompt, personality,
+ * and post-history instructions sit after it, so later dialogue cannot cover the voice.
+ */
+export function characterSpeechPrompts(card: Pick<AiriCard, 'messageExample' | 'name' | 'nickname' | 'personality' | 'postHistoryInstructions' | 'systemPrompt'> | undefined): { examples: string, afterTranscript: string } {
+  if (!card)
+    return EMPTY_CHARACTER_SPEECH
+
+  const name = card.name?.trim() || card.nickname?.trim() || 'Character'
+  const exampleBlocks = (card.messageExample ?? [])
+    .map(group => group
+      .map(line => line.replaceAll('{{char}}', name).replaceAll('{{user}}', 'User').trim())
+      .filter(line => line.length > 0)
+      .join('\n'))
+    .filter(block => block.length > 0)
+  const examples = exampleBlocks.length === 0
+    ? ''
+    : `Example dialogue for ${name}. Match this voice.\n\n${exampleBlocks.join('\n\n')}`
+
+  const systemPrompt = card.systemPrompt?.trim() ?? ''
+  const personality = card.personality?.trim() ?? ''
+  const postHistory = card.postHistoryInstructions?.trim() ?? ''
+  const afterParts = [
+    systemPrompt,
+    personality ? `Character personality:\n${personality}` : '',
+    postHistory,
+    SPOKEN_LINE_ONLY,
+  ].filter(part => part.length > 0)
+
+  return {
+    examples,
+    afterTranscript: afterParts.join('\n\n'),
+  }
+}
+
 function resolveSystemPrompt(card: AiriCard | undefined): string {
   if (!card)
     return ''
 
-  // Position-sensitive CCv3 fields are deliberately excluded until provider
-  // message assembly owns their ordering and role semantics.
+  // Example dialogue and post-history instructions are placed by send assembly.
+  // They stay off this string so the transcript cannot sit on top of the voice.
   const systemPromptParts = [
     card.systemPrompt,
     card.description,

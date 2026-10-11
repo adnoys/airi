@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -149,3 +149,30 @@ class TestRankEntries:
         expected = scoring.SIMILARITY_WEIGHT * 1.0 + scoring.TIME_RELEVANCE_WEIGHT * 1.0
         assert ranked[0]['score'] == pytest.approx(expected)
         assert not math.isnan(ranked[0]['time_relevance'])
+
+
+class TestNamedDays:
+    def test_reads_relative_days_from_today(self) -> None:
+        assert scoring.named_day_offsets('我前天说了什么') == [2]
+        assert scoring.named_day_offsets('昨天和前天') == [1, 2]
+        assert scoring.named_day_offsets('大前天呢') == [3]
+        assert scoring.named_day_offsets('hello') == []
+
+    def test_keeps_entries_from_the_named_local_day(self) -> None:
+        now = datetime.now().astimezone()
+        target = (now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+        other = (now - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        on_day = make_entry(target.astimezone(timezone.utc).isoformat())
+        on_day['content'] = 'whale'
+        off_day = make_entry(other.astimezone(timezone.utc).isoformat())
+        off_day['content'] = 'today talk'
+        matched = scoring.entries_for_named_days('我前天说了什么', [off_day, on_day], now.timestamp())
+        assert matched is not None
+        assert [entry['content'] for entry in matched] == ['whale']
+
+    def test_returns_none_when_the_query_names_no_day(self) -> None:
+        assert scoring.entries_for_named_days('matcha', [], datetime.now().timestamp()) is None
+
+    def test_returns_empty_when_that_day_has_no_entries(self) -> None:
+        now = datetime.now().timestamp()
+        assert scoring.entries_for_named_days('昨天', [], now) == []

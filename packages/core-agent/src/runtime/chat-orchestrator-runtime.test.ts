@@ -257,6 +257,27 @@ describe('createChatOrchestratorRuntime', () => {
     expect(harness.stream).toHaveBeenCalledOnce()
   })
 
+  it('places character examples before the transcript and speech rules after it', async () => {
+    const harness = createHarness()
+    const request = harness.runtime.submit('hello', {
+      model: 'gpt-test',
+      chatProvider: provider,
+      characterExamples: 'Example dialogue.',
+      characterAfterTranscript: 'Stay possessive.',
+    }, 'session-1')
+    await request.done
+
+    const turns = harness.stream.mock.calls[0][2].turns
+    const exampleIndex = turns.findIndex(turn => turn.type === 'system' && turn.id === 'character-examples')
+    const userIndex = turns.findIndex(turn => turn.type === 'user')
+    const afterIndex = turns.findIndex(turn => turn.type === 'system' && turn.id === 'character-after-transcript')
+    expect(exampleIndex).toBeGreaterThanOrEqual(0)
+    expect(exampleIndex).toBeLessThan(userIndex)
+    expect(afterIndex).toBe(turns.length - 1)
+    if (turns[afterIndex]?.type === 'system')
+      expect(turns[afterIndex].content).toEqual([{ type: 'text', text: 'Stay possessive.' }])
+  })
+
   it('stores the user message before prepareContext resolves', async () => {
     const harness = createHarness()
     const release = Promise.withResolvers<void>()
