@@ -14,6 +14,12 @@ class TestKeywordScores:
         scores = keyword_scores('matcha', entries)
         assert scores[0] > scores[1]
 
+    def test_extra_entry_terms_lower_the_overlap_score(self) -> None:
+        entries = [{'content': 'matcha'}, {'content': 'matcha latte every morning'}]
+        exact, longer = keyword_scores('matcha', entries)
+        assert exact == pytest.approx(1.0)
+        assert longer < exact
+
     def test_chinese_bigram_overlap(self) -> None:
         entries = [{'content': '用户最喜欢吃红烧肉'}, {'content': '用户养了一只猫'}]
         scores = keyword_scores('红烧肉', entries)

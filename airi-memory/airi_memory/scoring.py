@@ -173,7 +173,8 @@ def keyword_scores(query: str, entries: list[dict]) -> list[float]:
             scores.append(0.0)
             continue
         overlap = query_terms & entry_terms
-        scores.append(len(overlap) / max(1, len(query_terms & entry_terms | query_terms)))
+        union = query_terms | entry_terms
+        scores.append(len(overlap) / max(1, len(union)))
     return scores
 
 
