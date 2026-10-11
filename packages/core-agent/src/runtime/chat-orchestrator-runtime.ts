@@ -14,6 +14,7 @@ import { chatMessagesToTurns } from '../messages/chat-completions'
 import { formatTimePrefix } from '../messages/datetime-prefix'
 import { renderConversationPreview } from '../messages/preview'
 import { createChatHooks } from './agent-hooks'
+import { storedAssistantMessages } from './follow-up-message'
 import { useLlmmarkerParser } from './llm-marker-parser'
 import { categorizeResponse, createStreamingCategorizer } from './response-categoriser'
 
@@ -1086,16 +1087,25 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
         console.error('Assistant response observer failed:', error)
       }
 
+      let storedReplyText = fullText
       if (!shouldAbort() && (buildingMessage.slices.length > 0 || generatedTurn?.rounds.length)) {
-        const finalAssistant = buildingMessage
-        deps.session.appendSessionMessage(sessionId, finalAssistant)
-        assistantStored = true
-        deps.onAssistantMessageAppended?.({
-          sessionId,
-          roundId,
-          message: finalAssistant,
-          messageText: fullText,
-        })
+        const messages = storedAssistantMessages(buildingMessage)
+        const visibleParts = messages
+          .map(message => typeof message.content === 'string' ? message.content : '')
+          .filter(text => text.length > 0)
+        if (visibleParts.length > 0)
+          storedReplyText = visibleParts.join('\n\n')
+
+        for (const message of messages) {
+          deps.session.appendSessionMessage(sessionId, message)
+          assistantStored = true
+          deps.onAssistantMessageAppended?.({
+            sessionId,
+            roundId,
+            message,
+            messageText: typeof message.content === 'string' ? message.content : fullText,
+          })
+        }
       }
 
       if (shouldAbort())
@@ -1123,7 +1133,7 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
         return
       deps.onAssistantTurnReady?.({
         sessionId,
-        messageText: fullText,
+        messageText: storedReplyText,
         sessionMessages: sessionMessagesForSend,
       })
 
