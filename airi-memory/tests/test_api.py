@@ -111,12 +111,12 @@ class TestMemories:
         assert second['entry']['id'] == first['id']
         assert second['entry']['recall_count'] == 1
 
-    def test_create_without_embedding_config_fails(self, tmp_path: Path) -> None:
+    def test_create_without_either_client_fails(self, tmp_path: Path) -> None:
         app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path))
         with TestClient(app) as test_client:
             response = test_client.post('/v1/memories', json={'content': 'Anything'})
         assert response.status_code == 503
-        assert 'Embedding is not configured' in response.json()['detail']
+        assert response.json()['detail'] == 'Retrieval is not configured. Set it through PUT /v1/config first.'
 
     def test_patch_reembeds(self, client: TestClient) -> None:
         entry = add_memory(client, 'Before patch')['entry']
@@ -215,13 +215,18 @@ class TestLLMRetrieval:
         assert body['results'][0]['recall_count'] == 1
         assert reranker.calls[0][0] == 'matcha'
 
-    def test_search_without_llm_config_fails(self, tmp_path: Path) -> None:
+    def test_search_without_either_client_reports_unconfigured(self, tmp_path: Path) -> None:
         config = ServiceConfig(data_dir=tmp_path, retrieval='llm')
         app = create_app(config, MemoryStore(tmp_path))
         with TestClient(app) as test_client:
+            health = test_client.get('/v1/health').json()
             response = test_client.post('/v1/search', json={'query': 'Anything'})
+        assert health['status'] == 'ok'
+        assert health['retrieval'] is None
+        assert health['llm_configured'] is False
+        assert health['embedding_configured'] is False
         assert response.status_code == 503
-        assert 'reranking chat model is not configured' in response.json()['detail']
+        assert response.json()['detail'] == 'Retrieval is not configured. Set it through PUT /v1/config first.'
 
     def test_put_config_switches_mode(self, tmp_path: Path, reranker: FakeReranker) -> None:
         app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path), llm_factory=lambda _c: reranker)

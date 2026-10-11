@@ -41,8 +41,8 @@ class TestMode:
     def test_embedding_mode_falls_back_to_the_chat_model(self, tmp_path: Path) -> None:
         assert _config(tmp_path, RETRIEVAL_EMBEDDING, False, True).mode == RETRIEVAL_LLM
 
-    def test_embedding_mode_stays_embedding_without_either_client(self, tmp_path: Path) -> None:
-        assert _config(tmp_path, RETRIEVAL_EMBEDDING, False, False).mode == RETRIEVAL_EMBEDDING
+    def test_embedding_mode_is_unset_without_either_client(self, tmp_path: Path) -> None:
+        assert _config(tmp_path, RETRIEVAL_EMBEDDING, False, False).mode is None
 
     def test_llm_mode_uses_the_chat_model(self, tmp_path: Path) -> None:
         assert _config(tmp_path, RETRIEVAL_LLM, False, True).mode == RETRIEVAL_LLM
@@ -50,8 +50,8 @@ class TestMode:
     def test_llm_mode_falls_back_to_embeddings(self, tmp_path: Path) -> None:
         assert _config(tmp_path, RETRIEVAL_LLM, True, False).mode == RETRIEVAL_EMBEDDING
 
-    def test_llm_mode_stays_llm_without_either_client(self, tmp_path: Path) -> None:
-        assert _config(tmp_path, RETRIEVAL_LLM, False, False).mode == RETRIEVAL_LLM
+    def test_llm_mode_is_unset_without_either_client(self, tmp_path: Path) -> None:
+        assert _config(tmp_path, RETRIEVAL_LLM, False, False).mode is None
 
 
 class TestLoadConfig:

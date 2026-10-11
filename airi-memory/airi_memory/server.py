@@ -133,8 +133,17 @@ class MemoryService:
                 backfilled += 1
         return backfilled
 
+    def require_mode(self) -> str:
+        mode = self.mode
+        if mode is None:
+            raise HTTPException(
+                status_code=503,
+                detail='Retrieval is not configured. Set it through PUT /v1/config first.',
+            )
+        return mode
+
     async def create_memory(self, payload: MemoryCreateRequest) -> dict:
-        if self.mode == RETRIEVAL_EMBEDDING:
+        if self.require_mode() == RETRIEVAL_EMBEDDING:
             embedder = self.require_embedder()
             vector = await embedder.embed(payload.content)
             duplicate = self.store.find_duplicate(vector)
@@ -164,7 +173,7 @@ class MemoryService:
             limit = min(len(named_day), max(payload.top_k, LLM_PREFILTER_LIMIT))
             return self._finish_hits(named_day[:limit], now, similarity=1.0)
 
-        if self.mode == RETRIEVAL_EMBEDDING:
+        if self.require_mode() == RETRIEVAL_EMBEDDING:
             embedder = self.require_embedder()
             query_vector = await embedder.embed(payload.query)
             ranked = scoring.rank_entries(query_vector, self.store.raw_entries(), now)
@@ -298,7 +307,7 @@ def create_app(
         return {
             'embedding': service.config.embedding,
             'llm': service.config.llm,
-            'retrieval': service.mode,
+            'retrieval': service.config.retrieval,
         }
 
     @app.put('/v1/config')
@@ -309,7 +318,7 @@ def create_app(
         return {
             'embedding': service.config.embedding,
             'llm': service.config.llm,
-            'retrieval': service.mode,
+            'retrieval': service.config.retrieval,
             'backfilled': backfilled,
         }
 

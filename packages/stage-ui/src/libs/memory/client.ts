@@ -52,7 +52,7 @@ const healthSchema = object({
   version: string(),
   embedding_configured: boolean(),
   llm_configured: boolean(),
-  retrieval: memoryRetrievalModeSchema,
+  retrieval: nullable(memoryRetrievalModeSchema),
 })
 
 const configSchema = object({

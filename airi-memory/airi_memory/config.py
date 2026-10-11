@@ -56,11 +56,23 @@ class ServiceConfig(BaseModel):
     retrieval: str = RETRIEVAL_EMBEDDING
 
     @property
-    def mode(self) -> str:
-        """The retrieval mode that is actually usable right now."""
+    def mode(self) -> str | None:
+        """The retrieval mode that can run with the clients configured now.
+
+        The preferred mode wins when its client exists. Otherwise the other
+        configured client is used. None means neither client exists.
+        """
         if self.retrieval == RETRIEVAL_LLM:
-            return RETRIEVAL_LLM if self.llm else (RETRIEVAL_EMBEDDING if self.embedding else RETRIEVAL_LLM)
-        return RETRIEVAL_EMBEDDING if self.embedding else (RETRIEVAL_LLM if self.llm else RETRIEVAL_EMBEDDING)
+            if self.llm is not None:
+                return RETRIEVAL_LLM
+            if self.embedding is not None:
+                return RETRIEVAL_EMBEDDING
+            return None
+        if self.embedding is not None:
+            return RETRIEVAL_EMBEDDING
+        if self.llm is not None:
+            return RETRIEVAL_LLM
+        return None
 
 
 def default_data_dir() -> Path:
