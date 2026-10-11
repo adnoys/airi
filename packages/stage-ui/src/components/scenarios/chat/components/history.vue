@@ -19,6 +19,7 @@ import ChatHistoryMessageFrame from './history-message-frame.vue'
 import ChatHistoryTimeSeparator from './history-time-separator.vue'
 import ChatUserItem from './user-item.vue'
 
+import { storedAssistantMessages } from '../../../../stores/chat/follow-up-message'
 import { useAiriCardStore } from '../../../../stores/modules/airi-card'
 import { useChatHistoryScroll } from '../composables/use-chat-history-scroll'
 import { useChatHistoryTopFade } from '../composables/use-chat-history-top-fade'
@@ -119,18 +120,19 @@ function canReplyToMessage(message: ChatHistoryItem) {
   return getChatHistoryItemCopyText(message).trim().length > 0
 }
 const renderMessages = computed<ChatHistoryItem[]>(() => {
-  if (!props.sending)
-    return props.messages
+  let messages = props.messages
+  if (props.sending) {
+    const streamId = streaming.value.id
+    const hasStreamAlready = !!streamId && props.messages.some(message => message.role === 'assistant' && message.id === streamId)
+    if (streamId && !hasStreamAlready)
+      messages = [...props.messages, streaming.value]
+  }
 
-  const streamId = streaming.value.id
-  if (!streamId)
-    return props.messages
-
-  const hasStreamAlready = props.messages.some(message => message.role === 'assistant' && message.id === streamId)
-  if (hasStreamAlready)
-    return props.messages
-
-  return [...props.messages, streaming.value]
+  return messages.flatMap((message): ChatHistoryItem[] => {
+    if (message.role !== 'assistant')
+      return [message]
+    return storedAssistantMessages(message)
+  })
 })
 function canRetryMessageAt(index: number) {
   const precedingMessage = renderMessages.value[index - 1]

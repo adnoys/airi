@@ -1,5 +1,7 @@
 import type { StreamingAssistantMessage } from '../types/chat'
 
+import { nanoid } from 'nanoid'
+
 /** A line the model uses to start the message it sends after the first reply. */
 export const FOLLOW_UP_MESSAGE_MARK = '[[follow]]'
 
@@ -22,21 +24,26 @@ export function splitFollowUpSpeech(text: string): [string, string] | null {
   return [first, second]
 }
 
+function replySpeech(message: StreamingAssistantMessage): string {
+  const sliceText = message.slices
+    .filter(slice => slice.type === 'text')
+    .map(slice => slice.text)
+    .join('')
+  if (sliceText.includes(FOLLOW_UP_MESSAGE_MARK))
+    return sliceText
+  if (typeof message.content === 'string')
+    return message.content
+  return sliceText
+}
+
 /**
  * Stores a marked reply as two assistant messages.
  *
- * Tool results and non-text slices stay on the original message. The follow-up
- * message is speech only.
+ * The mark may sit in the text slices with no line break after it. Tool results
+ * and non-text slices stay on the first message. The follow-up message is speech only.
  */
 export function storedAssistantMessages(message: StreamingAssistantMessage): StreamingAssistantMessage[] {
-  if (message.tool_results.length > 0)
-    return [message]
-  if (message.slices.some(slice => slice.type !== 'text'))
-    return [message]
-  if (typeof message.content !== 'string')
-    return [message]
-
-  const parts = splitFollowUpSpeech(message.content)
+  const parts = splitFollowUpSpeech(replySpeech(message))
   if (!parts)
     return [message]
 
@@ -45,14 +52,19 @@ export function storedAssistantMessages(message: StreamingAssistantMessage): Str
     {
       ...message,
       content: first,
-      slices: [{ type: 'text', text: first }],
+      slices: [
+        { type: 'text', text: first },
+        ...message.slices.filter(slice => slice.type !== 'text'),
+      ],
       categorization: message.categorization
         ? { reasoning: message.categorization.reasoning, speech: first }
         : undefined,
     },
     {
       role: 'assistant',
-      id: message.id ? `${message.id}:follow` : 'follow',
+      // A missing source id has no stable key. The same literal id makes
+      // later follow-up messages collide in one session.
+      id: message.id ? `${message.id}:follow` : nanoid(),
       content: second,
       slices: [{ type: 'text', text: second }],
       tool_results: [],

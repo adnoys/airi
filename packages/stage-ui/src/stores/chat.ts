@@ -34,6 +34,7 @@ import { useLlmToolsetPromptsStore } from './ai/chat-llm/toolset-prompts'
 import { useAuthStore } from './auth'
 import { createMemoryContext, createMinecraftContext, createRuntimePromptContext, createUserAccountContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
+import { storedAssistantMessages } from './chat/follow-up-message'
 import { describeChatImages, replaceToolResultImages } from './chat/image-projection'
 import { useChatSessionStore } from './chat/session-store'
 import { useChatStreamStore } from './chat/stream-store'
@@ -452,7 +453,13 @@ export const useChatStore = defineStore('chat', () => {
     session: {
       ensureSession: sessionId => chatSession.ensureSession(sessionId),
       getSessionMessages: sessionId => chatSession.getSessionMessages(sessionId).map(message => toRaw(message)),
-      appendSessionMessage: (sessionId, message) => chatSession.appendSessionMessage(sessionId, message),
+      appendSessionMessage: (sessionId, message) => {
+        // The dev server prebundles @proj-airi/core-agent from its last build.
+        // Splitting here keeps a marked reply as two bubbles before that build is loaded.
+        const parts = message.role === 'assistant' ? storedAssistantMessages(message) : [message]
+        for (const part of parts)
+          chatSession.appendSessionMessage(sessionId, part)
+      },
       commitUserMessage: (sessionId, message) => chatSession.commitUserMessage(sessionId, message),
       getSessionGeneration: sessionId => chatSession.getSessionGeneration(sessionId),
     },
