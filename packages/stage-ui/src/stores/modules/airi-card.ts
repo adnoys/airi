@@ -30,8 +30,13 @@ export type { AiriCard, AiriExtension } from '../../types/airiCard'
 /** Empty speech placement. Callers can reuse this object. */
 const EMPTY_CHARACTER_SPEECH = { examples: '', afterTranscript: '' }
 
-/** Last line of the prompt. It keeps the reply in dialogue instead of a comment on the prompt. */
-const SPOKEN_LINE_ONLY = 'The next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.'
+/** Last lines of the prompt. They keep the reply in dialogue and keep the user's pronouns. */
+const SPOKEN_LINE_ONLY = [
+  'When you repeat the user\'s words, 我 in that sentence is the user and 你 is you.',
+  'Do not turn the user\'s request into your demand.',
+  'Do not add possession the user did not say.',
+  'The next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.',
+].join('\n')
 
 /**
  * Speech text that stays out of the standing system prompt.

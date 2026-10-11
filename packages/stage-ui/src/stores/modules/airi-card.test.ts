@@ -570,7 +570,11 @@ describe('airi-card store', () => {
       messageExample: [['{{user}}: Hi', '{{char}}: Mine.']],
     })).toEqual({
       examples: 'Example dialogue for adnoys. Match this voice.\n\nUser: Hi\nadnoys: Mine.',
-      afterTranscript: 'Character personality:\nPossessive.\n\nStay close.\n\nThe next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.',
+      afterTranscript: [
+        'Character personality:\nPossessive.',
+        'Stay close.',
+        'When you repeat the user\'s words, 我 in that sentence is the user and 你 is you.\nDo not turn the user\'s request into your demand.\nDo not add possession the user did not say.\nThe next message is one spoken line in this voice. Do not explain the line, name the voice, or ask the user to judge it.',
+      ].join('\n\n'),
     })
     expect(characterSpeechPrompts(undefined)).toEqual({ examples: '', afterTranscript: '' })
   })
