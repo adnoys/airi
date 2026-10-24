@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from airi_memory.llm import LLMClient
-from airi_memory.scoring import keyword_scores, normalize_text
+from airi_memory.scoring import dedup_key, keyword_scores, normalize_text
 
 
 class TestKeywordScores:
@@ -42,6 +42,21 @@ class TestNormalizeText:
 
     def test_different_texts_differ(self) -> None:
         assert normalize_text('a b c') != normalize_text('a b d')
+
+
+class TestDedupKey:
+    def test_ignores_the_parenthetical_quote(self) -> None:
+        assert dedup_key('用户喜欢猫（用户原话：我养了一只猫）') == dedup_key('用户喜欢猫')
+
+    def test_folds_whitespace_and_case_like_normalize(self) -> None:
+        assert dedup_key('User  likes matcha') == dedup_key('user likes matcha')
+
+    def test_different_facts_differ(self) -> None:
+        assert dedup_key('用户喜欢猫（原话：我养猫）') != dedup_key('用户喜欢狗（原话：我养狗）')
+
+    def test_content_without_a_fact_falls_back_to_the_whole_text(self) -> None:
+        assert dedup_key('（只有引用）') == dedup_key('（只有引用）')
+        assert dedup_key('（只有引用）') != dedup_key('（另一句引用）')
 
 
 class FakeChatTransport:

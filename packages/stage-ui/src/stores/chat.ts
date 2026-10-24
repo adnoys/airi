@@ -473,8 +473,10 @@ export const useChatStore = defineStore('chat', () => {
         if (account)
           snapshot[account.contextId] = [account]
         // Memories are retrieved per request during send preparation and read here
-        // synchronously, exactly like the account context. They must not persist in
-        // the registry, or a stale memory list would ride along on later requests.
+        // synchronously, like the account context, and never persist in the
+        // registry, or stale memories ride along on later requests. Preparation
+        // to this read never awaits, so a concurrent send cannot interleave its
+        // retrieval results.
         const memories = createMemoryContext(memoryStore.retrievedMemories)
         if (memories)
           snapshot[memories.contextId] = [memories]
@@ -553,22 +555,6 @@ export const useChatStore = defineStore('chat', () => {
     },
   })
 
-  /**
-   * Loads memories for this request, then revises them from their source dialogues.
-   *
-   * The model reads the list after this returns. A dialogue that cannot be
-   * read leaves the stored memories unchanged.
-   */
-  async function prepareMemoryContext(query: string): Promise<void> {
-    await memoryStore.retrieveForQuery(query)
-    try {
-      await memoryStore.reconcileRetrievedMemories(sessionId => chatSession.getSessionDialogue(sessionId))
-    }
-    catch (error) {
-      console.warn('[memory] Failed to read the source dialogue for a memory:', errorMessageFrom(error))
-    }
-  }
-
   // One request owns preparation and generation. Cancellation cannot miss asynchronous startup.
   const requests = new Map<string, {
     sessionId: string
@@ -607,7 +593,7 @@ export const useChatStore = defineStore('chat', () => {
         ...captured,
         stickers,
         ...activeCharacterSpeech(),
-        prepareContext: () => prepareMemoryContext(sendingMessage),
+        prepareContext: () => memoryStore.retrieveForQuery(sendingMessage),
       }, sessionId)
     })()
     const request = {
@@ -693,7 +679,7 @@ export const useChatStore = defineStore('chat', () => {
       systemPromptSupplement,
       stickers,
       ...activeCharacterSpeech(),
-      prepareContext: () => prepareMemoryContext(payload.text),
+      prepareContext: () => memoryStore.retrieveForQuery(payload.text),
       tools: async () => {
         const references = collectToolReferences(payload.sessionId, payload.tools)
         return llmToolsStore.getToolsByNames(...references.map(tool => tool.name))

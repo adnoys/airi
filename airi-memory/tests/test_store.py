@@ -96,3 +96,32 @@ class TestDuplicates:
         store.add('Missing', None)
         pending = store.entries_missing_embedding()
         assert [entry['content'] for entry in pending] == ['Missing']
+
+
+class TestTextDuplicates:
+    def test_same_fact_with_different_quotes_deduplicates(self, store: MemoryStore) -> None:
+        store.add('用户喜欢猫（用户原话：我养了一只猫）', None)
+        duplicate = store.find_duplicate_text('用户喜欢猫（用户原话：家里有猫）')
+        assert duplicate is not None
+        assert duplicate['content'].startswith('用户喜欢猫')
+
+    def test_different_facts_stay_separate(self, store: MemoryStore) -> None:
+        store.add('用户喜欢猫', None)
+        assert store.find_duplicate_text('用户喜欢狗') is None
+
+    def test_whitespace_and_case_variants_deduplicate(self, store: MemoryStore) -> None:
+        store.add('User likes matcha', None)
+        assert store.find_duplicate_text('user  likes matcha') is not None
+
+
+class TestSetEmbeddings:
+    def test_attaches_vectors_and_persists(self, store: MemoryStore) -> None:
+        first = store.add('One', None)
+        second = store.add('Two', None)
+        applied = store.set_embeddings([(first['id'], [1.0, 0.0]), (second['id'], [0.0, 1.0])])
+        assert applied == 2
+        assert store.entries_missing_embedding() == []
+        assert store.find_duplicate([0.99, 0.1])['content'] == 'One'
+
+    def test_unknown_ids_are_ignored(self, store: MemoryStore) -> None:
+        assert store.set_embeddings([('missing', [1.0])]) == 0

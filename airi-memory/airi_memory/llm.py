@@ -14,6 +14,10 @@ import httpx
 RERANK_SYSTEM_PROMPT = (
     'You rank stored memories by how well they help answer the query. '
     'The user sends a query and a numbered list of memories. '
+    'Each memory starts with its stored local date in brackets, '
+    'for example [2026-10-24]. When the query names a day, a date, or '
+    'a recency such as yesterday, use the dates to pick the memories '
+    'stored then. '
     'A query may ask about several things at once: pick at least one '
     'memory for every part of the query when a matching memory exists. '
     'Reply with a JSON array of the memory numbers, best match first, '

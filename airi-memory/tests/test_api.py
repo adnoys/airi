@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -93,6 +94,36 @@ class TestConfig:
     def test_get_config_roundtrip(self, client: TestClient) -> None:
         body = client.get('/v1/config').json()
         assert body['embedding']['model'] == 'fake-model'
+
+    def test_get_config_never_echoes_the_api_key(self, tmp_path: Path) -> None:
+        config = ServiceConfig(
+            data_dir=tmp_path,
+            embedding=EmbeddingConfig(base_url='https://embed.example.com/v1', api_key='secret', model='m'),
+        )
+        app = create_app(config, MemoryStore(tmp_path))
+        with TestClient(app) as test_client:
+            body = test_client.get('/v1/config').json()
+        assert body['embedding']['api_key'] == ''
+        assert body['embedding']['model'] == 'm'
+
+    def test_put_config_keeps_the_stored_key_when_the_key_field_is_empty(self, tmp_path: Path) -> None:
+        app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path))
+        with TestClient(app) as test_client:
+            test_client.put('/v1/config', json={
+                'embedding': {'base_url': 'https://embed.example.com/v1', 'api_key': 'secret', 'model': 'm'},
+            })
+            body = test_client.put('/v1/config', json={
+                'embedding': {'base_url': 'https://embed.example.com/v1', 'api_key': '', 'model': 'm'},
+            }).json()
+            kept = json.loads((tmp_path / 'config.json').read_text(encoding='utf-8'))
+            test_client.put('/v1/config', json={
+                'embedding': {'base_url': 'https://other.example.com/v1', 'api_key': '', 'model': 'm'},
+            })
+            dropped = json.loads((tmp_path / 'config.json').read_text(encoding='utf-8'))
+        assert body['embedding']['api_key'] == ''
+        assert kept['embedding']['api_key'] == 'secret'
+        # A different endpoint must not receive the key stored for the old one.
+        assert dropped['embedding']['api_key'] == ''
 
 
 class TestMemories:
@@ -187,7 +218,8 @@ class TestLLMRetrieval:
         assert second['entry']['id'] == first['id']
         assert second['entry']['recall_count'] == 1
 
-    def test_named_day_search_skips_rerank_and_uses_the_local_date(self, tmp_path: Path, reranker: FakeReranker) -> None:
+    def test_search_sends_dated_candidates_to_the_reranker(self, tmp_path: Path, reranker: FakeReranker) -> None:
+        """A day query ranks through the chat model; no date shortcut bypasses it."""
         store = MemoryStore(tmp_path)
         config = ServiceConfig(
             data_dir=tmp_path,
@@ -199,12 +231,14 @@ class TestLLMRetrieval:
         day_before = (local_now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
         with TestClient(app) as test_client:
             test_client.post('/v1/memories', json={'content': '用户想要鲸鱼的图片'})
-            test_client.post('/v1/memories', json={'content': '用户昨天说想听我爱你'})
+            test_client.post('/v1/memories', json={'content': '用户说想听我爱你'})
             whale = next(entry for entry in store.raw_entries() if entry['content'] == '用户想要鲸鱼的图片')
             store.replace(whale['id'], {**whale, 'created_at': day_before.astimezone(timezone.utc).isoformat()})
-            body = test_client.post('/v1/search', json={'query': '我前天说了什么', 'top_k': 6}).json()
-        assert reranker.calls == []
-        assert [entry['content'] for entry in body['results']] == ['用户想要鲸鱼的图片']
+            test_client.post('/v1/search', json={'query': '我前天说了什么', 'top_k': 6})
+        assert len(reranker.calls) == 1
+        dated = {line.split('] ', 1)[1]: line.split('] ', 1)[0] + ']' for line in reranker.calls[0][1]}
+        assert dated['用户想要鲸鱼的图片'] == f'[{day_before.date().isoformat()}]'
+        assert dated['用户说想听我爱你'] == f'[{local_now.date().isoformat()}]'
 
     def test_search_reranks_through_the_chat_model(self, llm_client: TestClient, reranker: FakeReranker) -> None:
         llm_client.post('/v1/memories', json={'content': 'User likes matcha'})
@@ -212,7 +246,7 @@ class TestLLMRetrieval:
         body = llm_client.post('/v1/search', json={'query': 'matcha', 'top_k': 3}).json()
         assert len(body['results']) == 1
         assert body['results'][0]['content'] == 'User likes matcha'
-        assert body['results'][0]['recall_count'] == 1
+        assert body['results'][0]['recall_count'] == 0
         assert reranker.calls[0][0] == 'matcha'
 
     def test_search_without_either_client_reports_unconfigured(self, tmp_path: Path) -> None:
@@ -227,6 +261,26 @@ class TestLLMRetrieval:
         assert health['embedding_configured'] is False
         assert response.status_code == 503
         assert response.json()['detail'] == 'Retrieval is not configured. Set it through PUT /v1/config first.'
+
+    def test_put_config_keeps_an_omitted_client(self, tmp_path: Path) -> None:
+        app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path))
+        with TestClient(app) as test_client:
+            test_client.put('/v1/config', json={
+                'retrieval': 'embedding',
+                'embedding': {'base_url': 'https://embed.example.com/v1', 'api_key': 'e', 'model': 'embed'},
+            })
+            body = test_client.put('/v1/config', json={
+                'retrieval': 'llm',
+                'llm': {'base_url': 'https://api.deepseek.com', 'api_key': 'k', 'model': 'deepseek-chat'},
+            }).json()
+            assert body['embedding']['model'] == 'embed'
+            assert body['llm']['model'] == 'deepseek-chat'
+            health = test_client.get('/v1/health').json()
+            assert health['retrieval'] == 'llm'
+            assert health['embedding_configured'] is True
+            saved = json.loads((tmp_path / 'config.json').read_text(encoding='utf-8'))
+            assert saved['embedding']['model'] == 'embed'
+            assert saved['llm']['model'] == 'deepseek-chat'
 
     def test_put_config_switches_mode(self, tmp_path: Path, reranker: FakeReranker) -> None:
         app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path), llm_factory=lambda _c: reranker)
@@ -252,12 +306,14 @@ class TestSearch:
         assert best['similarity'] == pytest.approx(1.0)
         assert best['score'] >= best['similarity']
 
-    def test_search_reinforces_hits(self, client: TestClient) -> None:
+    def test_search_is_read_only(self, client: TestClient) -> None:
         add_memory(client, 'alpha')
         first = client.post('/v1/search', json={'query': 'alpha'}).json()['results'][0]
-        assert first['recall_count'] == 1
         second = client.post('/v1/search', json={'query': 'alpha'}).json()['results'][0]
-        assert second['recall_count'] == 2
+        assert first['recall_count'] == 0
+        assert second['recall_count'] == 0
+        assert second['half_life_days'] == 7.0
+        assert second['last_recalled_at'] is None
 
     def test_top_k_limits_results(self, client: TestClient) -> None:
         add_memory(client, 'alpha')
@@ -270,4 +326,11 @@ class TestSearch:
         app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path))
         with TestClient(app) as test_client:
             response = test_client.post('/v1/search', json={'query': 'Anything'})
+        assert response.status_code == 503
+
+    def test_named_day_query_without_config_fails_too(self, tmp_path: Path) -> None:
+        # No date shortcut may bypass the unconfigured-service guard.
+        app = create_app(ServiceConfig(data_dir=tmp_path), MemoryStore(tmp_path))
+        with TestClient(app) as test_client:
+            response = test_client.post('/v1/search', json={'query': '我前天说了什么'})
         assert response.status_code == 503

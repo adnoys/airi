@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 SECONDS_PER_DAY = 86400.0
 
@@ -73,10 +73,13 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 def reinforce(entry: dict, now_seconds: float) -> dict:
-    """Return a copy of ``entry`` after one recall.
+    """Return a copy of ``entry`` after the stored fact is stated again.
 
-    Reinforcement grows strength and half-life, so recalled memories fade
-    slower and eventually cross the long-term threshold.
+    Reinforcement grows strength and half-life, so restated memories fade
+    slower and eventually cross the long-term threshold. Search never
+    reinforces: an automatic per-send retrieval is not evidence that the
+    memory mattered. Only the create path calls this, when a restated
+    fact deduplicates against an existing entry.
     """
     next_entry = {**entry}
     next_entry['strength'] = min(
@@ -183,42 +186,24 @@ def normalize_text(content: str) -> str:
     return ''.join(content.split()).lower()
 
 
-# Longer phrases first so 大前天 is not also read as 前天.
-_NAMED_DAY_PATTERN = re.compile('大前天|前天|昨天|今天')
-_NAMED_DAY_OFFSETS = {
-    '今天': 0,
-    '昨天': 1,
-    '前天': 2,
-    '大前天': 3,
-}
+def dedup_key(content: str) -> str:
+    """Fact portion of a memory, for duplicate checks without vectors.
 
-
-def named_day_offsets(query: str) -> list[int]:
-    """Day offsets named in the query. 0 is today, 1 is yesterday."""
-    offsets: list[int] = []
-    for match in _NAMED_DAY_PATTERN.finditer(query):
-        offset = _NAMED_DAY_OFFSETS[match.group(0)]
-        if offset not in offsets:
-            offsets.append(offset)
-    return offsets
-
-
-def entry_local_date(created_at: str) -> datetime.date:
-    """Calendar day of a stored timestamp in the machine's local timezone."""
-    return datetime.fromtimestamp(parse_timestamp(created_at)).date()
-
-
-def entries_for_named_days(query: str, entries: list[dict], now_seconds: float) -> list[dict] | None:
-    """Entries stored on a day the query names, oldest first.
-
-    Returns None when the query names no day. Returns an empty list when
-    it names a day and nothing was stored then.
+    Extraction ends each fact with a verbatim quote in parentheses. The
+    same fact restated yields the same fact portion with a different
+    quote, so duplicates compare facts, not quotes. Content without a
+    parenthetical folds as a whole.
     """
-    offsets = named_day_offsets(query)
-    if not offsets:
-        return None
-    today = datetime.fromtimestamp(now_seconds).date()
-    wanted = {today - timedelta(days=offset) for offset in offsets}
-    matched = [entry for entry in entries if entry_local_date(entry['created_at']) in wanted]
-    matched.sort(key=lambda entry: entry['created_at'])
-    return matched
+    fact = re.split(r'[（(]', content, maxsplit=1)[0]
+    folded = normalize_text(fact)
+    return folded if folded else normalize_text(content)
+
+
+def entry_local_date(created_at: str) -> str:
+    """Local calendar day of a stored timestamp, for example ``2026-10-24``.
+
+    The rerank prompt shows this date next to each candidate, so date and
+    day-of-the-week queries are answered by ranking instead of a date
+    shortcut that bypasses it.
+    """
+    return datetime.fromtimestamp(parse_timestamp(created_at)).date().isoformat()

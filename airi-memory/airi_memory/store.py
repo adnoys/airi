@@ -111,12 +111,17 @@ class MemoryStore:
         return best
 
     def find_duplicate_text(self, content: str) -> dict | None:
-        """Exact-text duplicate lookup for retrieval modes without vectors."""
-        folded = scoring.normalize_text(content)
-        if not folded:
+        """Stored entry with the same fact portion, if any.
+
+        Compares the fact before the parenthetical quote, so a restated
+        fact with a freshly chosen quote deduplicates instead of piling
+        up near-identical entries.
+        """
+        key = scoring.dedup_key(content)
+        if not key:
             return None
         for entry in self._entries:
-            if scoring.normalize_text(str(entry.get('content', ''))) == folded:
+            if scoring.dedup_key(str(entry.get('content', ''))) == key:
                 return entry
         return None
 
@@ -155,6 +160,21 @@ class MemoryStore:
 
     def entries_missing_embedding(self) -> list[dict]:
         return [entry for entry in self._entries if not entry.get('embedding')]
+
+    def set_embeddings(self, pairs: list[tuple[str, list[float]]]) -> int:
+        """Attach vectors to entries by id and persist once."""
+        with self._lock:
+            vectors = dict(pairs)
+            applied = 0
+            for index, entry in enumerate(self._entries):
+                vector = vectors.pop(entry['id'], None)
+                if vector is None:
+                    continue
+                self._entries[index] = {**entry, 'embedding': vector}
+                applied += 1
+            if applied:
+                self._save()
+            return applied
 
 
 def public_entry(entry: dict) -> dict:

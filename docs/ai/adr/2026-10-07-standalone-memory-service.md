@@ -1,6 +1,6 @@
 # Memory lives in a standalone local service behind an HTTP protocol
 
-Status: Accepted
+Status: Accepted (amended 2026-10-24: search is read-only and never reinforces. See [2026-10-24-memory-search-is-read-only.md](2026-10-24-memory-search-is-read-only.md))
 
 ## Context
 
@@ -21,7 +21,7 @@ to inspect, back up, or reuse outside the app.
 - Memory is a standalone service in `airi-memory/` at the repo root, written
   in Python (FastAPI), run from the `airi` conda environment.
 - AIRI talks to it over HTTP REST on `127.0.0.1:6430`. The protocol is the
-  contract: health, config, memory CRUD, and search with reinforcement.
+  contract: health, config, memory CRUD, and read-only search.
 - The service owns storage (JSON file), embeddings (remote OpenAI-compatible
   API), scoring (stateless decay), deduplication, and reinforcement. AIRI owns
   extraction (it already holds a configured chat model), injection into the
@@ -29,8 +29,9 @@ to inspect, back up, or reuse outside the app.
 - Retrieval happens during send preparation and rides into the request
   snapshot like the account context. It never persists in the context
   registry, so stale memories cannot leak into later requests.
-- The service binds to localhost only, has no authentication, and stores data
-  in a gitignored `data/` directory.
+- The service binds to localhost only and has no authentication. Data lives
+  in the platform application-data directory (amended 2026-10-24; see
+  [2026-10-24-memory-search-is-read-only.md](2026-10-24-memory-search-is-read-only.md)).
 
 Alternatives considered:
 

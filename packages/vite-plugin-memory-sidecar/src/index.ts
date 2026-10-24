@@ -95,8 +95,12 @@ function interpreterCandidates(explicit?: string): InterpreterCandidate[] {
   if (process.env.AIRI_MEMORY_PYTHON)
     candidates.push({ command: process.env.AIRI_MEMORY_PYTHON, prefix: [] })
   // `conda run` executes a command. The command is `python -m airi_memory`.
-  if (process.platform !== 'win32')
-    candidates.push({ command: 'conda', prefix: ['run', '-n', 'airi', '--no-capture-output', 'python'] })
+  // The environment name is a default for this repository's development
+  // setup; AIRI_MEMORY_CONDA_ENV points the plugin at another environment.
+  if (process.platform !== 'win32') {
+    const condaEnv = process.env.AIRI_MEMORY_CONDA_ENV ?? 'airi'
+    candidates.push({ command: 'conda', prefix: ['run', '-n', condaEnv, '--no-capture-output', 'python'] })
+  }
   candidates.push({ command: 'python3', prefix: [] }, { command: 'python', prefix: [] })
   return candidates
 }

@@ -1491,38 +1491,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     return sessionMessages.value[sessionId]
   }
 
-  /**
-   * User and assistant text for one saved session.
-   *
-   * Memory revision reads this before a reply. A loaded session is newer
-   * than its disk record. A missing session returns null.
-   */
-  async function getSessionDialogue(sessionId: string): Promise<{ userText: string, assistantText: string } | null> {
-    if (!ready.value)
-      await initialize()
-    const loaded = sessionMessages.value[sessionId]
-    const stored = loaded ? undefined : await chatSessionsRepo.getSession(sessionId)
-    const messages = loaded ?? stored?.messages
-    if (!messages)
-      return null
-
-    const userParts: string[] = []
-    const assistantParts: string[] = []
-    for (const message of messages) {
-      const text = extractMessageText(message).trim()
-      if (!text)
-        continue
-      if (message.role === 'user')
-        userParts.push(text)
-      else if (message.role === 'assistant')
-        assistantParts.push(text)
-    }
-    return {
-      userText: userParts.join('\n'),
-      assistantText: assistantParts.join('\n'),
-    }
-  }
-
   function getSessionGeneration(sessionId: string) {
     ensureGeneration(sessionId)
     return sessionGenerations.value[sessionId] ?? 0
@@ -1696,7 +1664,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     persistSessionMessages,
     getSessionMessages,
     getSessionMessagesIfLoaded,
-    getSessionDialogue,
     sessionMessages,
     sessionMetas,
     getSessionGeneration,

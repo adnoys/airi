@@ -23,6 +23,18 @@ import '@unocss/reset/tailwind.css'
 import 'vue-sonner/style.css'
 import './styles/main.css'
 import 'uno.css'
+// Fonts
+import '@fontsource-variable/dm-sans/index.css'
+import '@fontsource-variable/jura/index.css'
+import '@fontsource-variable/quicksand/index.css'
+import '@fontsource-variable/urbanist/index.css'
+import '@fontsource-variable/comfortaa/index.css'
+import '@fontsource/dm-mono/index.css'
+import '@fontsource/dm-serif-display/index.css'
+import '@fontsource/gugi/index.css'
+import '@fontsource/kiwi-maru/index.css'
+import '@fontsource/m-plus-rounded-1c/index.css'
+import '@fontsource-variable/nunito/index.css'
 
 if (isEnvTruthy(import.meta.env.VITE_ENABLE_ANALYTICS)) {
   void loadAnalyticsAdapter(async () => {

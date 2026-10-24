@@ -5,7 +5,7 @@ A Vite plugin that keeps the local [airi-memory](../../../airi-memory/README.md)
 ## What it does
 
 - On dev server start, first probes the service health endpoint. When something already listens there (for example an instance the user started by hand), the plugin leaves it alone.
-- Otherwise it spawns the Python service as a child process. The first candidate is `conda run -n airi python -m airi_memory`. The `python` token is required. `conda run` treats the next token as the command. Later candidates are `python3` and `python`.
+- Otherwise it spawns the Python service as a child process. The first candidate is `conda run -n airi python -m airi_memory`; set `AIRI_MEMORY_CONDA_ENV` to use another conda environment. The `python` token is required. `conda run` treats the next token as the command. Later candidates are `python3` and `python`.
 - On dev server stop, the plugin stops the spawned process and every child process it created. An externally started service is never killed.
 
 The spawned service binds to `127.0.0.1` only and stores data in `airi-memory/data/`, which is gitignored. The in-app memory toggle stays the single per-application switch that decides whether chat talks to the service.

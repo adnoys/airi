@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -151,28 +151,15 @@ class TestRankEntries:
         assert not math.isnan(ranked[0]['time_relevance'])
 
 
-class TestNamedDays:
-    def test_reads_relative_days_from_today(self) -> None:
-        assert scoring.named_day_offsets('我前天说了什么') == [2]
-        assert scoring.named_day_offsets('昨天和前天') == [1, 2]
-        assert scoring.named_day_offsets('大前天呢') == [3]
-        assert scoring.named_day_offsets('hello') == []
+class TestEntryLocalDate:
+    def test_formats_the_local_calendar_day(self) -> None:
+        local_now = datetime.now().astimezone()
+        at_noon = local_now.replace(hour=12, minute=0, second=0, microsecond=0)
+        assert scoring.entry_local_date(at_noon.astimezone(timezone.utc).isoformat()) == at_noon.date().isoformat()
 
-    def test_keeps_entries_from_the_named_local_day(self) -> None:
-        now = datetime.now().astimezone()
-        target = (now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
-        other = (now - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-        on_day = make_entry(target.astimezone(timezone.utc).isoformat())
-        on_day['content'] = 'whale'
-        off_day = make_entry(other.astimezone(timezone.utc).isoformat())
-        off_day['content'] = 'today talk'
-        matched = scoring.entries_for_named_days('我前天说了什么', [off_day, on_day], now.timestamp())
-        assert matched is not None
-        assert [entry['content'] for entry in matched] == ['whale']
-
-    def test_returns_none_when_the_query_names_no_day(self) -> None:
-        assert scoring.entries_for_named_days('matcha', [], datetime.now().timestamp()) is None
-
-    def test_returns_empty_when_that_day_has_no_entries(self) -> None:
-        now = datetime.now().timestamp()
-        assert scoring.entries_for_named_days('昨天', [], now) == []
+    def test_late_utc_evening_is_the_next_local_day(self) -> None:
+        # 23:00 UTC is already the next day east of UTC; the rerank prompt
+        # shows machine-local days, matching what the user means by 今天.
+        late_utc = datetime(2026, 10, 24, 23, 0, tzinfo=timezone.utc)
+        expected = datetime.fromtimestamp(late_utc.timestamp()).date().isoformat()
+        assert scoring.entry_local_date(late_utc.isoformat()) == expected

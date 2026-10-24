@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 
 from pydantic import BaseModel
+
+from .store import MEMORY_FILE_NAME
 
 CONFIG_FILE_NAME = 'config.json'
 
@@ -75,16 +79,64 @@ class ServiceConfig(BaseModel):
         return None
 
 
+def platform_data_dir() -> Path:
+    """Per-user application data directory, outside any repository."""
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'airi-memory'
+    if sys.platform == 'win32':
+        return Path.home() / 'AppData' / 'Local' / 'airi-memory'
+    return Path.home() / '.local' / 'share' / 'airi-memory'
+
+
+def legacy_data_dir() -> Path:
+    """The data directory inside the repository, used before 2026-10-24."""
+    return Path(__file__).resolve().parent.parent / 'data'
+
+
+def migrate_legacy_data(target: Path) -> bool:
+    """Copy an in-repo data directory forward, once.
+
+    Memories used to live inside the repository, where a clean checkout
+    wiped them. Only files missing at the target are copied, so the
+    target always wins afterwards.
+    """
+    legacy = legacy_data_dir()
+    try:
+        same = legacy.resolve() == target.resolve()
+    except OSError:
+        same = False
+    if same or not legacy.is_dir():
+        return False
+    copied = False
+    for file_name in (MEMORY_FILE_NAME, CONFIG_FILE_NAME):
+        source = legacy / file_name
+        destination = target / file_name
+        if source.is_file() and not destination.exists():
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            copied = True
+    if copied:
+        print(f'airi-memory: copied existing data from {legacy} to {target}')
+    return copied
+
+
 def default_data_dir() -> Path:
     override = os.environ.get(ENV_DATA_DIR)
     if override:
         return Path(override)
-    return Path(__file__).resolve().parent.parent / 'data'
+    return platform_data_dir()
 
 
 def load_config(data_dir: Path | None = None) -> ServiceConfig:
-    """Load configuration; the environment wins over ``config.json``."""
+    """Load configuration; the environment wins over ``config.json``.
+
+    Without an explicit data directory the platform default is used and
+    an in-repo legacy data directory is copied forward once.
+    """
+    explicit = data_dir is not None or bool(os.environ.get(ENV_DATA_DIR))
     data_dir = data_dir or default_data_dir()
+    if not explicit:
+        migrate_legacy_data(data_dir)
     config_path = data_dir / CONFIG_FILE_NAME
 
     embedding: EmbeddingConfig | None = None

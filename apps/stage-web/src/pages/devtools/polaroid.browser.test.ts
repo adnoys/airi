@@ -8,8 +8,6 @@ import { createPinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from 'vue'
 
-import 'virtual:uno.css'
-
 let presetArchive: Blob
 const layoutStyle = document.createElement('style')
 
@@ -36,6 +34,15 @@ beforeAll(async () => {
 
   await import('@proj-airi/stage-ui-live2d/utils/live2d-zip-loader')
   await import('@proj-airi/stage-ui-live2d/utils/live2d-opfs-registration')
+
+  // NOTICE:
+  // The UnoCSS dev server returns only the utilities extracted so far, and
+  // the test page never receives later stylesheet updates. Importing
+  // `virtual:uno.css` after the page components transformed avoids a
+  // partial-stylesheet race that collapses the canvas layout.
+  // Removal condition: the test environment applies UnoCSS updates after
+  // the initial request.
+  await import('virtual:uno.css')
 
   const pinia = createPinia()
   const displayModels = useDisplayModelsStore(pinia)

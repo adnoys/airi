@@ -21,6 +21,8 @@ from airi_memory.config import (
     ServiceConfig,
     default_data_dir,
     load_config,
+    migrate_legacy_data,
+    platform_data_dir,
     save_service_config,
 )
 
@@ -121,6 +123,63 @@ class TestLoadConfig:
         monkeypatch.setenv(ENV_DATA_DIR, str(tmp_path))
 
         assert default_data_dir() == tmp_path
+
+
+class TestPlatformDataDir:
+    def test_matches_the_system_platform(self, monkeypatch) -> None:
+        monkeypatch.setattr('sys.platform', 'darwin')
+        assert platform_data_dir() == Path.home() / 'Library' / 'Application Support' / 'airi-memory'
+        monkeypatch.setattr('sys.platform', 'win32')
+        assert platform_data_dir() == Path.home() / 'AppData' / 'Local' / 'airi-memory'
+        monkeypatch.setattr('sys.platform', 'linux')
+        assert platform_data_dir() == Path.home() / '.local' / 'share' / 'airi-memory'
+
+
+class TestMigrateLegacyData:
+    def test_copies_missing_files_once(self, tmp_path: Path, monkeypatch) -> None:
+        legacy = tmp_path / 'legacy'
+        legacy.mkdir()
+        (legacy / 'memories.json').write_text('[]', encoding='utf-8')
+        (legacy / 'config.json').write_text('{}', encoding='utf-8')
+        target = tmp_path / 'target'
+        monkeypatch.setattr('airi_memory.config.legacy_data_dir', lambda: legacy)
+
+        assert migrate_legacy_data(target) is True
+        assert (target / 'memories.json').read_text(encoding='utf-8') == '[]'
+        assert (target / 'config.json').exists()
+
+        # The target already has the files, so a later legacy change stays out.
+        (legacy / 'memories.json').write_text('[changed]', encoding='utf-8')
+        assert migrate_legacy_data(target) is False
+        assert (target / 'memories.json').read_text(encoding='utf-8') == '[]'
+
+    def test_skips_when_the_target_is_the_legacy_dir(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr('airi_memory.config.legacy_data_dir', lambda: tmp_path)
+        assert migrate_legacy_data(tmp_path) is False
+
+    def test_default_load_migrates_legacy_data(self, tmp_path: Path, monkeypatch) -> None:
+        legacy = tmp_path / 'legacy'
+        legacy.mkdir()
+        (legacy / 'memories.json').write_text('[]', encoding='utf-8')
+        target = tmp_path / 'platform'
+        monkeypatch.setattr('airi_memory.config.legacy_data_dir', lambda: legacy)
+        monkeypatch.setattr('airi_memory.config.platform_data_dir', lambda: target)
+        monkeypatch.delenv(ENV_DATA_DIR, raising=False)
+
+        load_config()
+
+        assert (target / 'memories.json').exists()
+
+    def test_explicit_data_dir_never_migrates(self, tmp_path: Path, monkeypatch) -> None:
+        legacy = tmp_path / 'legacy'
+        legacy.mkdir()
+        (legacy / 'memories.json').write_text('[]', encoding='utf-8')
+        fresh = tmp_path / 'fresh'
+        monkeypatch.setattr('airi_memory.config.legacy_data_dir', lambda: legacy)
+
+        load_config(fresh)
+
+        assert not (fresh / 'memories.json').exists()
 
 
 class TestSaveServiceConfig:

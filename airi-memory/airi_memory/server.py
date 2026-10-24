@@ -65,6 +65,31 @@ def _default_llm_factory(llm: LLMConfig) -> LLMClient:
     return LLMClient(llm.base_url, llm.api_key, llm.model)
 
 
+def _redact(config: EmbeddingConfig | LLMConfig | None) -> dict | None:
+    """Config without the key. Responses never echo secrets back."""
+    if config is None:
+        return None
+    return config.model_dump() | {'api_key': ''}
+
+
+def _with_kept_key(
+    incoming: EmbeddingConfig | LLMConfig | None,
+    stored: EmbeddingConfig | LLMConfig | None,
+) -> EmbeddingConfig | LLMConfig | None:
+    """Fill an empty incoming api_key from the stored config.
+
+    GET never echoes keys, so the settings UI sends an empty key unless the
+    user typed a new one. The stored key is kept only for the same endpoint
+    and model; carrying an old key to a different provider would leak it
+    there.
+    """
+    if incoming is None or incoming.api_key != '' or stored is None:
+        return incoming
+    if type(incoming) is not type(stored) or incoming.base_url != stored.base_url or incoming.model != stored.model:
+        return incoming
+    return incoming.model_copy(update={'api_key': stored.api_key})
+
+
 class MemoryService:
     """Owns the store and the current retrieval clients; routes delegate here."""
 
@@ -128,9 +153,7 @@ class MemoryService:
         for start in range(0, len(pending), SEARCH_BATCH_SIZE):
             batch = pending[start:start + SEARCH_BATCH_SIZE]
             vectors = await self._embedder.embed_many([entry['content'] for entry in batch])
-            for entry, vector in zip(batch, vectors):
-                self.store.update_raw(entry['id'], lambda raw, vector=vector: {**raw, 'embedding': vector})
-                backfilled += 1
+            backfilled += self.store.set_embeddings([(entry['id'], vector) for entry, vector in zip(batch, vectors)])
         return backfilled
 
     def require_mode(self) -> str:
@@ -164,26 +187,20 @@ class MemoryService:
         return {'entry': entry, 'deduplicated': False}
 
     async def search(self, payload: SearchRequest) -> dict:
+        """Rank memories for one query.
+
+        Search is read-only: it scores entries but never writes them
+        back. Reinforcement happens only in the create path, when a
+        restated fact deduplicates against an existing entry, so an
+        automatic retrieval on every send cannot inflate half-lives.
+        """
         now = time.time()
-        # A named day is a date filter. Resolve it from today, then keep only
-        # entries stored on that local calendar day. Skip reranking: the query
-        # often shares no words with what was said that day.
-        named_day = scoring.entries_for_named_days(payload.query, self.store.raw_entries(), now)
-        if named_day is not None:
-            limit = min(len(named_day), max(payload.top_k, LLM_PREFILTER_LIMIT))
-            return self._finish_hits(named_day[:limit], now, similarity=1.0)
 
         if self.require_mode() == RETRIEVAL_EMBEDDING:
             embedder = self.require_embedder()
             query_vector = await embedder.embed(payload.query)
             ranked = scoring.rank_entries(query_vector, self.store.raw_entries(), now)
-            hits = ranked[:payload.top_k]
-            results = []
-            for hit in hits:
-                reinforced = scoring.reinforce(hit, now)
-                self._persist_hit(reinforced)
-                results.append(public_entry(reinforced))
-            return {'results': results}
+            return {'results': [public_entry(hit) for hit in ranked[:payload.top_k]]}
 
         llm = self.require_llm()
         entries = self.store.raw_entries()
@@ -200,8 +217,16 @@ class MemoryService:
             return {'results': []}
 
         candidates = [entries[index] for index in candidate_indexes]
-        candidate_texts = [str(entry.get('content', '')) for entry in candidates]
-        picked = await llm.rerank(payload.query, candidate_texts, payload.top_k)
+        # Each line carries the stored local date, so the reranking model
+        # answers day and date queries by ranking instead of a date shortcut
+        # that bypasses relevance.
+        candidate_lines = [
+            f"[{scoring.entry_local_date(str(entry['created_at']))}] {str(entry.get('content', ''))}"
+            for entry in candidates
+        ]
+        # The rerank client caps its answer; the slice keeps the top_k
+        # contract for any rerank implementation.
+        picked = (await llm.rerank(payload.query, candidate_lines, payload.top_k))[:payload.top_k]
 
         max_decayed = max(
             (
@@ -220,46 +245,8 @@ class MemoryService:
             similarity = max(0.0, 1.0 - position * LLM_RANK_SCORE_STEP)
             relevance = scoring.time_relevance(entry, now, max_decayed)
             score = scoring.SIMILARITY_WEIGHT * similarity + scoring.TIME_RELEVANCE_WEIGHT * relevance
-            reinforced = scoring.reinforce(
-                {**entry, 'score': score, 'similarity': similarity, 'time_relevance': relevance},
-                now,
-            )
-            self._persist_hit(reinforced)
-            results.append(public_entry(reinforced))
+            results.append(public_entry({**entry, 'score': score, 'similarity': similarity, 'time_relevance': relevance}))
         return {'results': results}
-
-    def _finish_hits(self, entries: list[dict], now: float, similarity: float) -> dict:
-        """Reinforce the given entries and return them in that order."""
-        max_decayed = max(
-            (
-                scoring.decayed_strength(
-                    float(entry.get('strength', scoring.INITIAL_STRENGTH)),
-                    float(entry.get('half_life_days', scoring.INITIAL_HALF_LIFE_DAYS)),
-                    scoring.age_in_days(entry['created_at'], now),
-                )
-                for entry in entries
-            ),
-            default=0.0,
-        )
-        results = []
-        for entry in entries:
-            relevance = scoring.time_relevance(entry, now, max_decayed)
-            score = scoring.SIMILARITY_WEIGHT * similarity + scoring.TIME_RELEVANCE_WEIGHT * relevance
-            reinforced = scoring.reinforce(
-                {**entry, 'score': score, 'similarity': similarity, 'time_relevance': relevance},
-                now,
-            )
-            self._persist_hit(reinforced)
-            results.append(public_entry(reinforced))
-        return {'results': results}
-
-    def _persist_hit(self, reinforced: dict) -> None:
-        # Ranking fields are per-request values; they must not leak into storage.
-        persisted = {
-            key: value for key, value in reinforced.items()
-            if key not in ('score', 'similarity', 'time_relevance')
-        }
-        self.store.replace(reinforced['id'], persisted)
 
 
 def create_app(
@@ -280,11 +267,13 @@ def create_app(
 
     app = FastAPI(title='airi-memory', lifespan=lifespan)
 
-    # The service binds to 127.0.0.1 only; any local origin (web dev server,
-    # Electron renderer) may call it, so the origin check stays permissive.
+    # Only local origins may call the service: the web dev server and an
+    # Electron renderer on localhost. A remote web page that reaches the
+    # localhost port cannot read memories or the provider keys. There is no
+    # authentication; any local process can still call the API.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=['*'],
+        allow_origin_regex=r'^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$',
         allow_credentials=False,
         allow_methods=['*'],
         allow_headers=['*'],
@@ -305,19 +294,23 @@ def create_app(
     @app.get('/v1/config')
     async def get_config() -> dict:
         return {
-            'embedding': service.config.embedding,
-            'llm': service.config.llm,
+            'embedding': _redact(service.config.embedding),
+            'llm': _redact(service.config.llm),
             'retrieval': service.config.retrieval,
         }
 
     @app.put('/v1/config')
     async def put_config(payload: ConfigPayload) -> dict:
-        service.set_config(payload.embedding, payload.llm, payload.retrieval)
-        save_service_config(config.data_dir, payload.embedding, payload.llm, payload.retrieval)
+        # An omitted client keeps its current settings: the settings page
+        # sends only the client that matches the selected mode.
+        embedding = _with_kept_key(payload.embedding, service.config.embedding) if payload.embedding is not None else service.config.embedding
+        llm = _with_kept_key(payload.llm, service.config.llm) if payload.llm is not None else service.config.llm
+        service.set_config(embedding, llm, payload.retrieval)
+        save_service_config(config.data_dir, embedding, llm, payload.retrieval)
         backfilled = await service.backfill_missing_embeddings()
         return {
-            'embedding': service.config.embedding,
-            'llm': service.config.llm,
+            'embedding': _redact(embedding),
+            'llm': _redact(llm),
             'retrieval': service.config.retrieval,
             'backfilled': backfilled,
         }

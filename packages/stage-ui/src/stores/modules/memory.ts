@@ -10,13 +10,12 @@ import { computed, ref, shallowRef } from 'vue'
 
 import { MemoryServiceClient } from '../../libs/memory/client'
 import { useConsciousnessStore } from './consciousness'
-import { reviseMemoryFromDialogue } from './memory-correction'
 
 export const DEFAULT_MEMORY_SERVICE_URL = 'http://127.0.0.1:6430'
 
 const MAX_EXTRACTED_MEMORIES = 5
 
-export const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You extract lasting facts from one conversation turn. Reply with a JSON array of at most ${MAX_EXTRACTED_MEMORIES} short strings. Each string is one third-person fact about the user or the companion: a preference, a personal detail, a promise, or an event that already happened. Write it as history, not as an order for later replies. Do not store a request to repeat a phrase or to perform a tone as a standing task. Store only what the user stated. Skip details that appear only in the assistant reply. Skip small talk, momentary emotions, and anything temporary. If the user denies a past statement, store nothing about that denial. Reply in the language of the conversation. Output only the JSON array.`
+export const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You extract lasting facts from one conversation turn. Reply with a JSON array of at most ${MAX_EXTRACTED_MEMORIES} short strings. Each string is one third-person fact about the user or the companion: a preference, a personal detail, a promise, or an event that already happened. End each fact with the speaker's exact words in parentheses, copied verbatim from the conversation. Write it as history, not as an order for later replies. Do not store a request to repeat a phrase or to perform a tone as a standing task. Store only what the user stated. Skip details that appear only in the assistant reply. Skip small talk, momentary emotions, and anything temporary. If the user denies a past statement, store nothing about that denial. Reply in the language of the conversation. Output only the JSON array.`
 
 function buildExtractionInput(userText: string, assistantText: string) {
   return `USER SAID:\n${userText}\n\nASSISTANT REPLIED:\n${assistantText}`
@@ -184,82 +183,6 @@ export const useMemoryStore = defineStore('memory', () => {
     await getClient().deleteMemory(id)
   }
 
-  /**
-   * Rewrites retrieved memories from the dialogues that created them.
-   *
-   * Chat calls this after retrieval and before the model reads
-   * `retrievedMemories`. Each memory is checked against its source session.
-   * Memories from that same session are checked too. A missing dialogue is
-   * left unchanged. A failing service must not fail the turn.
-   */
-  async function reconcileRetrievedMemories(
-    loadDialogue: (sessionId: string) => Promise<{ userText: string, assistantText: string } | null>,
-  ): Promise<number> {
-    if (!configured.value || retrievedMemories.value.length === 0)
-      return 0
-
-    const sessionIds = new Set(
-      retrievedMemories.value.flatMap(memory => memory.source_session_id ? [memory.source_session_id] : []),
-    )
-    if (sessionIds.size === 0)
-      return 0
-
-    try {
-      const listed = await getClient().listMemories()
-      const candidates = new Map<string, { id: string, content: string, source_session_id: string }>()
-      for (const memory of [...retrievedMemories.value, ...listed]) {
-        if (!memory.source_session_id || !sessionIds.has(memory.source_session_id))
-          continue
-        candidates.set(memory.id, {
-          id: memory.id,
-          content: memory.content,
-          source_session_id: memory.source_session_id,
-        })
-      }
-
-      const dialogues = new Map<string, { userText: string, assistantText: string } | null>()
-      const applied = new Map<string, { action: 'delete' } | { action: 'replace', content: string }>()
-      for (const memory of candidates.values()) {
-        if (!dialogues.has(memory.source_session_id))
-          dialogues.set(memory.source_session_id, await loadDialogue(memory.source_session_id))
-        const dialogue = dialogues.get(memory.source_session_id)
-        if (!dialogue)
-          continue
-        const revision = reviseMemoryFromDialogue(memory, dialogue)
-        if (!revision)
-          continue
-        try {
-          if (revision.action === 'delete')
-            await getClient().deleteMemory(memory.id)
-          else
-            await getClient().patchMemory(memory.id, revision.content)
-          applied.set(memory.id, revision)
-        }
-        catch (error) {
-          console.warn('[memory] Failed to revise a memory from its source dialogue:', errorMessageFrom(error))
-        }
-      }
-
-      if (applied.size > 0) {
-        retrievedMemories.value = retrievedMemories.value.flatMap((memory) => {
-          const revision = applied.get(memory.id)
-          if (!revision)
-            return [memory]
-          if (revision.action === 'delete')
-            return []
-          return [{ ...memory, content: revision.content }]
-        })
-      }
-      connection.value = 'connected'
-      return applied.size
-    }
-    catch (error) {
-      console.warn('[memory] Failed to compare memories with their source dialogues:', errorMessageFrom(error))
-      connection.value = 'unreachable'
-      return 0
-    }
-  }
-
   async function clearMemories(): Promise<number> {
     return await getClient().clearMemories()
   }
@@ -289,7 +212,6 @@ export const useMemoryStore = defineStore('memory', () => {
     addMemory,
     updateMemory,
     removeMemory,
-    reconcileRetrievedMemories,
     clearMemories,
     resetState,
   }
